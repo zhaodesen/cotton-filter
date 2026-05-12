@@ -35,43 +35,28 @@ jobs:
         if: runner.os == 'Windows'
         run: pyinstaller --onefile --windowed --name cotton-filter --clean cotton_filter.py
 
+      - name: Publish Windows release asset
+        if: runner.os == 'Windows' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "cotton-filter latest"
+          body: "Built automatically from commit ${{ github.sha }}."
+          files: dist/cotton-filter.exe
+          prerelease: false
+
       - name: Build macOS app
         if: runner.os == 'macOS'
         run: |
           pyinstaller --windowed --name cotton-filter --clean cotton_filter.py
           ditto -c -k --sequesterRsrc --keepParent dist/cotton-filter.app dist/cotton-filter-macos.zip
 
-      - name: Upload Windows artifact
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: cotton-filter-windows
-          path: dist/cotton-filter.exe
-
-      - name: Upload macOS artifact
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: cotton-filter-macos
-          path: dist/cotton-filter-macos.zip
-
-  release:
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Publish to latest release
+      - name: Publish macOS release asset
+        if: runner.os == 'macOS' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "cotton-filter latest"
           body: "Built automatically from commit ${{ github.sha }}."
-          files: |
-            release-assets/cotton-filter.exe
-            release-assets/cotton-filter-macos.zip
+          files: dist/cotton-filter-macos.zip
           prerelease: false
