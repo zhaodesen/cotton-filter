@@ -1,0 +1,9 @@
+# 只保留 cotton 筛选相关文件,屏蔽其余
+*
+!.gitignore
+!.github/
+!.github/**
+!cotton_filter.py
+!棉花筛选.bat
+!README_Windows.md
+!build_windows_exe.sh
