@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write   # 创建/更新 Release 需要
+
 jobs:
   build:
     runs-on: windows-latest
@@ -23,9 +26,11 @@ jobs:
       - name: Build single-file exe
         run: pyinstaller --onefile --name 棉花筛选 --clean cotton_filter.py
 
-      - name: Upload exe artifact
-        uses: actions/upload-artifact@v4
+      - name: Publish to "latest" release
+        uses: softprops/action-gh-release@v2
         with:
-          name: 棉花筛选-windows
-          path: dist/棉花筛选.exe
-          if-no-files-found: error
+          tag_name: latest
+          name: "最新版本 (自动构建)"
+          body: "由 commit ${{ github.sha }} 自动构建"
+          files: dist/棉花筛选.exe
+          prerelease: false
