@@ -1,36 +1,77 @@
-name: Build Windows EXE
+name: Build cotton-filter
 
 on:
   push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write   # 创建/更新 Release 需要
+  contents: write
 
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pandas openpyxl xlrd pyinstaller
 
-      - name: Build single-file exe
-        run: pyinstaller --onefile --name 棉花筛选 --clean cotton_filter.py
+      - name: Validate
+        run: |
+          python -m py_compile cotton_filter.py
+          python -c "import tkinter, pandas, openpyxl, xlrd"
 
-      - name: Publish to "latest" release
+      - name: Build Windows app
+        if: runner.os == 'Windows'
+        run: pyinstaller --onefile --windowed --name cotton-filter --clean cotton_filter.py
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: |
+          pyinstaller --windowed --name cotton-filter --clean cotton_filter.py
+          ditto -c -k --sequesterRsrc --keepParent dist/cotton-filter.app dist/cotton-filter-macos.zip
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cotton-filter-windows
+          path: dist/cotton-filter.exe
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cotton-filter-macos
+          path: dist/cotton-filter-macos.zip
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish to latest release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: "最新版本 (自动构建)"
-          body: "由 commit ${{ github.sha }} 自动构建"
-          files: dist/棉花筛选.exe
+          name: "cotton-filter latest"
+          body: "Built automatically from commit ${{ github.sha }}."
+          files: |
+            release-assets/cotton-filter.exe
+            release-assets/cotton-filter-macos.zip
           prerelease: false
