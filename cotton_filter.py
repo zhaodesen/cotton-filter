@@ -1,72 +1,114 @@
 """
-棉花报价表筛选脚本
+棉花报价表筛选 (通用版)
+- 自动定位表头行,容忍前置公司抬头/业务员等非数据行
+- 列名通过别名表对齐, 支持多家公司模板
+- 支持 .xlsx 和 .xls
+- 拖拽多文件、文件夹 / 双击弹窗
 
-用法:
-    python3 cotton_filter.py 单个文件.xlsx
-    python3 cotton_filter.py 文件夹/         # 批量处理整个文件夹
-    python3 cotton_filter.py --watch 文件夹/ # 监听文件夹, 新文件自动处理
+新增模板支持只需在 COLUMN_ALIASES 中加一行别名.
 """
 import re
 import sys
 from pathlib import Path
 import pandas as pd
 
-# ---- 列名(可根据实际表头微调) ----
-COL_COLOR  = "颜色级"
-COL_LENGTH = "长度"
-COL_STRENGTH = "强力"
-COL_MIC   = "马值"
-COL_UNIF  = "整齐度"
-COL_BASIS = "基差"
+
+# ====== 字段别名表 (key 为统一字段名,value 为可能出现的列名) ======
+COLUMN_ALIASES = {
+    "基差":   ["基差"],
+    "颜色级": ["颜色级", "颜色级占比", "颜色级别"],
+    "长度":   ["长度"],
+    "强力":   ["强力", "比强", "强度"],
+    "马值":   ["马值"],
+    "整齐度": ["整齐度", "长整", "整齐度指数"],
+    # 输出时能带上方便核对的标识列
+    "批号":   ["批号"],
+}
+REQUIRED = ["基差", "长度", "马值"]  # 缺这些列直接跳过该 sheet
 
 
-def extract_max_color_pct(text: str) -> float:
-    """从 '白棉2级:2.2%，白棉3级:95.7%，白棉4级:2.1%' 中取最大那个百分比.
-    返回 0.0 表示无法解析."""
-    if not isinstance(text, str):
+def normalize_text(x):
+    """去空白、全角转半角、小写化, 用于列名对齐."""
+    if x is None:
+        return ""
+    s = str(x).strip()
+    # 全角符号常见替换
+    s = s.replace("％", "%")
+    return s
+
+
+def find_header_row(df_raw: pd.DataFrame, max_scan: int = 30) -> int:
+    """在前 max_scan 行里找包含最多目标关键字的那一行作为表头.
+    返回行号 (0-indexed); 找不到返回 -1."""
+    keywords = set()
+    for aliases in COLUMN_ALIASES.values():
+        keywords.update(normalize_text(a) for a in aliases)
+
+    best_row, best_hits = -1, 0
+    for i in range(min(max_scan, len(df_raw))):
+        cells = [normalize_text(v) for v in df_raw.iloc[i].tolist()]
+        hits = sum(1 for c in cells if c in keywords)
+        if hits > best_hits:
+            best_hits, best_row = hits, i
+    # 至少命中 3 个关键字才算找到表头
+    return best_row if best_hits >= 3 else -1
+
+
+def build_column_map(header_cells) -> dict:
+    """根据实际表头, 返回 {统一字段名: 实际列索引} ."""
+    norm_cells = [normalize_text(c) for c in header_cells]
+    mapping = {}
+    for std_name, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            a = normalize_text(alias)
+            if a in norm_cells:
+                mapping[std_name] = norm_cells.index(a)
+                break
+    return mapping
+
+
+# ====== 颜色级解析 ======
+PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[%％]")
+
+def extract_max_color_pct(text) -> float:
+    if text is None or (isinstance(text, float) and pd.isna(text)):
         return 0.0
-    nums = re.findall(r"(\d+(?:\.\d+)?)\s*%", text)
+    s = str(text)
+    nums = PCT_RE.findall(s)
     return max((float(n) for n in nums), default=0.0)
 
 
-def score_row(row) -> int:
-    """
-    TODO: 由用户实现 —— 这是你领域知识最值钱的地方.
-    根据 row 的各字段返回总分(整数).
-    可用字段: row[COL_COLOR], row[COL_LENGTH], row[COL_STRENGTH],
-              row[COL_MIC], row[COL_UNIF]
-    辅助函数: extract_max_color_pct(row[COL_COLOR])
+# ====== 评分规则 ======
+def score_record(rec: dict) -> int:
+    """rec 是 {统一字段名: 原始值} 的字典."""
+    def num(v, default=0.0):
+        if v is None or pd.isna(v):
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
 
-    规则提醒(请在实现时明确边界 > 还是 >=):
-      颜色级最大档 >= 80%          : +100
-      长度 > 30                    : +400
-      长度 在 29~30                : +150     # 含端点? 重叠时取哪个?
-      马值 < 4.2                   : +100
-      马值 > 5                     : -100
-      整齐度 > 83                  : +200
-      强力 > 31                    : +250
-      强力 在 29~31                : +150
-    """
     score = 0
-    if extract_max_color_pct(row[COL_COLOR]) >= 80:
+    if extract_max_color_pct(rec.get("颜色级")) >= 80:
         score += 100
 
-    length = row[COL_LENGTH] or 0
+    length = num(rec.get("长度"))
     if length > 30:
         score += 400
     elif 29 <= length <= 30:
         score += 150
 
-    mic = row[COL_MIC] or 0
-    if mic < 4.2:
+    mic = num(rec.get("马值"))
+    if mic and mic < 4.2:
         score += 100
     elif mic > 5:
         score -= 100
 
-    if (row[COL_UNIF] or 0) > 83:
+    if num(rec.get("整齐度")) > 83:
         score += 200
 
-    s = row[COL_STRENGTH] or 0
+    s = num(rec.get("强力"))
     if s > 31:
         score += 250
     elif 29 <= s <= 31:
@@ -75,44 +117,105 @@ def score_row(row) -> int:
     return score
 
 
+# ====== 单个 sheet 处理 ======
+def process_sheet(df_raw: pd.DataFrame) -> pd.DataFrame | None:
+    """返回筛选后的 DataFrame; sheet 不像数据表则返回 None."""
+    hdr = find_header_row(df_raw)
+    if hdr < 0:
+        return None
+    col_map = build_column_map(df_raw.iloc[hdr].tolist())
+    if not all(k in col_map for k in REQUIRED):
+        return None
+
+    body = df_raw.iloc[hdr + 1:].reset_index(drop=True)
+
+    records = []
+    for _, row in body.iterrows():
+        basis_raw = row.iloc[col_map["基差"]]
+        try:
+            basis = float(basis_raw)
+        except (TypeError, ValueError):
+            continue  # 跳过空行 / 汇总行 / 文本行
+
+        rec = {std: row.iloc[idx] for std, idx in col_map.items()}
+        rec["_基差"] = basis
+        rec["_得分"] = score_record(rec)
+        rec["_与基差差距"] = basis - rec["_得分"]
+        records.append(rec)
+
+    if not records:
+        return None
+    df = pd.DataFrame(records)
+    kept = df[(df["_与基差差距"] > 0) & (df["_与基差差距"] <= 200)].copy()
+    # 重命名输出列
+    kept = kept.rename(columns={"_得分": "得分", "_与基差差距": "与基差差距"})
+    cols = ["批号", "基差", "得分", "与基差差距", "长度", "强力", "马值", "整齐度", "颜色级"]
+    kept = kept[[c for c in cols if c in kept.columns]]
+    return kept
+
+
 def filter_file(src: Path, dst: Path) -> int:
-    """读 src, 评分+过滤, 写 dst. 返回保留行数."""
-    df = pd.read_excel(src)
-    # 跳过空行
-    df = df.dropna(subset=[COL_BASIS]).copy()
+    """读所有 sheet,合并保留行写出. 返回保留总行数."""
+    xls = pd.ExcelFile(src)
+    parts = []
+    for sn in xls.sheet_names:
+        df_raw = pd.read_excel(src, sheet_name=sn, header=None)
+        result = process_sheet(df_raw)
+        if result is not None and len(result):
+            result.insert(0, "来源sheet", sn)
+            parts.append(result)
+    if not parts:
+        return 0
+    out = pd.concat(parts, ignore_index=True)
+    out.to_excel(dst, index=False)
+    return len(out)
 
-    df["得分"] = df.apply(score_row, axis=1)
-    # 保留条件: 得分 < 基差 且 (基差 - 得分) <= 200
-    diff = df[COL_BASIS] - df["得分"]
-    kept = df[(diff > 0) & (diff <= 200)].copy()
-    kept["与基差差距"] = diff[kept.index]
 
-    kept.to_excel(dst, index=False)
-    return len(kept)
-
-
+# ====== 入口 ======
 def _open_folder(p: Path):
-    """跨平台打开文件夹."""
     import subprocess, platform
-    sysname = platform.system()
-    if sysname == "Windows":
+    sys_ = platform.system()
+    if sys_ == "Windows":
         import os; os.startfile(p)
-    elif sysname == "Darwin":
+    elif sys_ == "Darwin":
         subprocess.run(["open", str(p)])
     else:
         subprocess.run(["xdg-open", str(p)])
 
 
+def _expand_targets(args):
+    """把混合的文件/文件夹参数展开成所有待处理的 xlsx/xls 文件."""
+    files = []
+    for a in args:
+        p = Path(a)
+        if not p.exists():
+            print(f"✗ 跳过(不存在): {p}"); continue
+        if p.is_file():
+            if p.suffix.lower() in (".xlsx", ".xls"):
+                files.append(p)
+        else:
+            for ext in ("*.xlsx", "*.xls"):
+                files.extend(sorted(p.glob(ext)))
+    # 去重 + 排除我们自己生成的输出
+    seen = set(); uniq = []
+    for f in files:
+        if f.parent.name == "筛选结果" or f.name.startswith("筛选_"):
+            continue
+        key = str(f.resolve())
+        if key in seen: continue
+        seen.add(key); uniq.append(f)
+    return uniq
+
+
 def main():
     args = sys.argv[1:]
     if not args:
-        # 双击 exe / 无参数运行 -> 弹窗选文件
         try:
             import tkinter as tk
             from tkinter import filedialog
             root = tk.Tk(); root.withdraw()
             picked = filedialog.askopenfilenames(
-                title="选择 Excel 报价表",
+                title="选择 Excel 报价表 (可多选)",
                 filetypes=[("Excel", "*.xlsx *.xls")])
             args = list(picked)
         except Exception:
@@ -120,33 +223,25 @@ def main():
         if not args:
             sys.exit(0)
 
-    out_dirs = []
+    files = _expand_targets(args)
+    if not files:
+        print("没有可处理的 Excel 文件"); input("按回车退出..."); sys.exit(0)
+
+    out_dir = files[0].parent / "筛选结果"
+    out_dir.mkdir(exist_ok=True)
+
     total = 0
-    for a in args:
-        target = Path(a)
-        if not target.exists():
-            print(f"✗ 跳过(不存在): {target}"); continue
-        out_dir = target.parent / "筛选结果" if target.is_file() else target / "筛选结果"
-        out_dir.mkdir(exist_ok=True)
-        out_dirs.append(out_dir)
+    for f in files:
+        try:
+            out = out_dir / f"筛选_{f.stem}.xlsx"
+            n = filter_file(f, out)
+            total += n
+            print(f"✓ {f.name}  保留 {n} 行 → {out.name}")
+        except Exception as e:
+            print(f"✗ {f.name}  出错: {e}")
 
-        files = [target] if target.is_file() else sorted(target.glob("*.xlsx"))
-        for f in files:
-            if f.parent.name == "筛选结果":
-                continue
-            out = out_dir / f"筛选_{f.name}"
-            try:
-                n = filter_file(f, out)
-                total += 1
-                print(f"✓ {f.name}  保留 {n} 行 → {out.name}")
-            except Exception as e:
-                print(f"✗ {f.name}  出错: {e}")
-
-    # 自动打开第一个输出目录
-    if out_dirs:
-        _open_folder(out_dirs[0])
-
-    print(f"\n共处理 {total} 个文件. 窗口将在 3 秒后关闭...")
+    _open_folder(out_dir)
+    print(f"\n共保留 {total} 行. 窗口将在 3 秒后关闭...")
     import time; time.sleep(3)
 
 
