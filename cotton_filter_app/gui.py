@@ -159,16 +159,12 @@ class CottonFilterApp:
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
 
-        self.ttk.Label(header, text=APP_NAME, style="Title.TLabel").grid(
+        self.ttk.Label(header, text="Excel 筛选工具", style="Title.TLabel").grid(
             row=0,
             column=0,
             sticky="w",
         )
-        self.ttk.Label(
-            header,
-            text="Excel 筛选工具",
-            style="Subtitle.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(3, 0))
+
 
     def build_actions(self, parent: Any) -> None:
         """构建操作区。"""
