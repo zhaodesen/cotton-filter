@@ -1,4 +1,4 @@
-"""Build the Windows executable with explicit runtime DLLs."""
+"""Build the Windows application folder with explicit runtime DLLs."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def find_runtime_dlls() -> list[Path]:
 def main() -> int:
     command = [
         "pyinstaller",
-        "--onefile",
+        "--onedir",
         "--windowed",
         "--name",
         "cotton-filter",

@@ -18,7 +18,7 @@ from .build_info import BUILD_VERSION
 from .constants import APP_NAME
 
 LATEST_RELEASE_API = "https://api.github.com/repos/zhaodesen/cotton-filter/releases/latest"
-WINDOWS_ASSET_NAME = "cotton-filter.exe"
+WINDOWS_ASSET_NAME = "cotton-filter-setup.exe"
 REQUEST_TIMEOUT_SECONDS = 15
 
 
@@ -140,24 +140,20 @@ def validate_digest(path: Path, expected_digest: str) -> None:
 
 
 def install_update_and_restart(downloaded_exe: Path) -> None:
-    """启动临时 PowerShell 更新脚本并退出当前程序。"""
+    """启动临时 PowerShell 安装脚本并退出当前程序。"""
 
     current_exe = Path(sys.executable).resolve()
     script_path = downloaded_exe.with_suffix(".ps1")
     script = f"""
 $ErrorActionPreference = "Stop"
-$source = "{_escape_powershell(str(downloaded_exe))}"
-$target = "{_escape_powershell(str(current_exe))}"
-$backup = "$target.bak"
+$installer = "{_escape_powershell(str(downloaded_exe))}"
+$app = "{_escape_powershell(str(current_exe))}"
 $pidToWait = {os.getpid()}
 Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
-if (Test-Path $backup) {{ Remove-Item $backup -Force }}
-if (Test-Path $target) {{ Move-Item $target $backup -Force }}
-Move-Item $source $target -Force
-Start-Process $target
+Start-Process $installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+if (Test-Path $app) {{ Start-Process $app }}
 Start-Sleep -Seconds 2
-if (Test-Path $backup) {{ Remove-Item $backup -Force }}
 Remove-Item $MyInvocation.MyCommand.Path -Force
 """
     script_path.write_text(script, encoding="utf-8")

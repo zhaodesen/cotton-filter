@@ -44,6 +44,12 @@ jobs:
         if: runner.os == 'Windows'
         run: python .github/scripts/build_windows.py
 
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
+        run: |
+          choco install innosetup --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion="${{ github.ref_name }}" installer/cotton-filter.iss
+
       - name: Publish Windows release asset
         if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -51,7 +57,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: "cotton-filter ${{ github.ref_name }}"
           body: "Built automatically from ${{ github.ref_name }}."
-          files: dist/cotton-filter.exe
+          files: dist/installer/cotton-filter-setup.exe
           prerelease: false
 
       - name: Build macOS app
