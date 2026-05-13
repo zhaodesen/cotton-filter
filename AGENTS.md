@@ -100,7 +100,7 @@ Excel 表里常见字段包括：
 - `cotton_filter_app/file_utils.py`：批量文件、输出路径和打开目录工具。
 - `cotton_filter_app/gui.py`：Tkinter 图形界面。
 - `README_Windows.md`：Windows 使用说明。
-- `.github/workflows/build.yml`：GitHub Actions 构建流程，使用 Python 3.10，校验 `main.py` 和 `cotton_filter_app/*.py`，运行 `pytest`，再用 PyInstaller 从 `main.py` 打包 Windows/macOS 应用。
+- `.github/workflows/build.yml`：GitHub Actions 构建流程，使用 Python 3.10，通过 `python -m compileall main.py cotton_filter_app` 校验语法，通过 `python -m pytest` 运行测试，再用 PyInstaller 从 `main.py` 打包 Windows/macOS 应用。
 
 当前处理逻辑：
 

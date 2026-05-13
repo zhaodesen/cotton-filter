@@ -28,9 +28,9 @@ jobs:
 
       - name: Validate
         run: |
-          python -m py_compile main.py cotton_filter_app/*.py
+          python -m compileall main.py cotton_filter_app
           python -c "import tkinter, pandas, openpyxl, xlrd"
-          pytest
+          python -m pytest
 
       - name: Build Windows app
         if: runner.os == 'Windows'
