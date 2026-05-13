@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,8 +68,16 @@ def get_update_info() -> UpdateInfo | None:
             "User-Agent": APP_NAME,
         },
     )
-    with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        release = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            release = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return None
+        raise RuntimeError(f"GitHub 更新接口返回 HTTP {error.code}") from error
+    except urllib.error.URLError as error:
+        reason = getattr(error, "reason", None) or error
+        raise RuntimeError(f"无法连接 GitHub 更新接口: {reason}") from error
 
     release_version = normalize_version(str(release.get("tag_name", "")))
     if not release_version or release_version == version:
@@ -84,7 +93,7 @@ def get_update_info() -> UpdateInfo | None:
                     release_url=str(release.get("html_url", "")),
                 )
 
-    return None
+    raise RuntimeError(f"最新版本 {release_version} 缺少 Windows 更新文件")
 
 
 def download_update(update: UpdateInfo) -> Path:

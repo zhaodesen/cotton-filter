@@ -636,7 +636,8 @@ class CottonFilterApp:
 
         self.update_btn.configure(state=self.tk.NORMAL)
         self.status_var.set("检查更新失败")
-        messagebox.showerror(APP_NAME, f"检查更新失败: {error}")
+        detail = str(error) or error.__class__.__name__
+        messagebox.showerror(APP_NAME, f"检查更新失败: {detail}")
 
     def prompt_update(self, update: Any) -> None:
         """提示用户下载并安装新版本。"""
@@ -677,7 +678,8 @@ class CottonFilterApp:
 
         self.status_var.set("更新失败")
         self.update_btn.configure(state=self.tk.NORMAL)
-        messagebox.showerror(APP_NAME, f"更新失败: {error}")
+        detail = str(error) or error.__class__.__name__
+        messagebox.showerror(APP_NAME, f"更新失败: {detail}")
 
     def handle_close(self) -> None:
         """处理窗口关闭按钮。"""
