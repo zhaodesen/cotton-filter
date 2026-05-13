@@ -19,17 +19,18 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas openpyxl xlrd pyinstaller
+          pip install pandas openpyxl xlrd pyinstaller pytest
 
       - name: Validate
         run: |
-          python -m py_compile cotton_filter.py
+          python -m py_compile main.py cotton_filter_app/*.py
           python -c "import tkinter, pandas, openpyxl, xlrd"
+          pytest
 
       - name: Build Windows app
         if: runner.os == 'Windows'
@@ -48,7 +49,7 @@ jobs:
       - name: Build macOS app
         if: runner.os == 'macOS'
         run: |
-          pyinstaller --windowed --name cotton-filter --clean cotton_filter.py
+          pyinstaller --windowed --name cotton-filter --clean main.py
           ditto -c -k --sequesterRsrc --keepParent dist/cotton-filter.app dist/cotton-filter-macos.zip
 
       - name: Publish macOS release asset

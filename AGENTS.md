@@ -100,6 +100,7 @@ Excel 表里常见字段包括：
 - `cotton_filter_app/file_utils.py`：批量文件、输出路径和打开目录工具。
 - `cotton_filter_app/gui.py`：Tkinter 图形界面。
 - `README_Windows.md`：Windows 使用说明。
+- `.github/workflows/build.yml`：GitHub Actions 构建流程，使用 Python 3.10，校验 `main.py` 和 `cotton_filter_app/*.py`，运行 `pytest`，再用 PyInstaller 从 `main.py` 打包 Windows/macOS 应用。
 
 当前处理逻辑：
 
@@ -115,6 +116,7 @@ Excel 表里常见字段包括：
 - 输出到 `cotton-filter-results`，文件名使用原文件名；重名时追加 `_2`、`_3` 等编号。
 - GUI 处理日志保持精简：只展示开始筛选、每个文件成功/失败、筛出行数和最终汇总。
 - GUI 采用克制的桌面工具样式：原生 ttk 按钮、浅色面板、表格式文件列表、浅色日志区和少量墨绿色状态强调，不引入额外前端依赖。
+- CI 构建入口是 `main.py`，不要再引用已删除的旧入口 `cotton_filter.py`。
 
 修改时注意：
 
