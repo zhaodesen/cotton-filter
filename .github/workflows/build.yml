@@ -29,8 +29,14 @@ jobs:
       - name: Validate
         run: |
           python -m compileall main.py cotton_filter_app
-          python -c "import tkinter, pandas, openpyxl, xlrd"
+          python -c "import tkinter, pandas, openpyxl, xlrd, pystray, PIL"
           python -m pytest
+
+      - name: Write build metadata
+        env:
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          python -c "import os; from pathlib import Path; commit = os.environ['BUILD_COMMIT']; Path('cotton_filter_app/build_info.py').write_text('\"\"\"Build metadata injected by GitHub Actions.\"\"\"\\n\\nfrom __future__ import annotations\\n\\n\\nBUILD_COMMIT = ' + repr(commit) + '\\n', encoding='utf-8')"
 
       - name: Build Windows app
         if: runner.os == 'Windows'

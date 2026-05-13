@@ -16,6 +16,7 @@ from .file_utils import (
     open_folder,
 )
 from .models import FileResult
+from .updater import download_update, get_update_info, install_update_and_restart
 
 
 class CottonFilterApp:
@@ -68,6 +69,7 @@ class CottonFilterApp:
         self.configure_styles()
         self.build_layout()
         self.root.protocol("WM_DELETE_WINDOW", self.handle_close)
+        self.root.after(1500, self.start_update_check)
 
     def configure_root(self) -> None:
         """设置主窗口。"""
@@ -572,6 +574,59 @@ class CottonFilterApp:
 
         if self.output_dir:
             open_folder(self.output_dir)
+
+    def start_update_check(self) -> None:
+        """后台检查 Windows 自动更新。"""
+
+        thread = threading.Thread(target=self.update_check_worker, daemon=True)
+        thread.start()
+
+    def update_check_worker(self) -> None:
+        """检查更新，避免阻塞 Tk 主线程。"""
+
+        try:
+            update = get_update_info()
+        except Exception:
+            return
+
+        if update is not None:
+            self.root.after(0, lambda: self.prompt_update(update))
+
+    def prompt_update(self, update: Any) -> None:
+        """提示用户下载并安装新版本。"""
+
+        from tkinter import messagebox
+
+        should_update = messagebox.askyesno(
+            APP_NAME,
+            "发现新版本，是否现在下载并重启更新？",
+        )
+        if not should_update:
+            return
+
+        self.status_var.set("正在下载更新...")
+        thread = threading.Thread(target=self.install_update_worker, args=(update,), daemon=True)
+        thread.start()
+
+    def install_update_worker(self, update: Any) -> None:
+        """下载更新并触发替换重启。"""
+
+        try:
+            downloaded_exe = download_update(update)
+            install_update_and_restart(downloaded_exe)
+        except Exception as error:
+            self.root.after(0, lambda: self.show_update_error(error))
+            return
+
+        self.root.after(0, self.quit_app)
+
+    def show_update_error(self, error: Exception) -> None:
+        """显示更新失败提示。"""
+
+        from tkinter import messagebox
+
+        self.status_var.set("更新失败")
+        messagebox.showerror(APP_NAME, f"更新失败: {error}")
 
     def handle_close(self) -> None:
         """处理窗口关闭按钮。"""
