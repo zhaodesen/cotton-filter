@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
 
 import pandas as pd
@@ -10,7 +11,32 @@ import pandas as pd
 from .models import Record
 
 
-PERCENT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[%％]")
+NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
+PERCENT_RE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[%％]")
+COLOR_RATIO_RE = re.compile(r"[:：]\s*([-+]?\d+(?:\.\d+)?)\s*(?:[%％])?")
+COLOR_GRADE_RE = re.compile(
+    r"(?:白棉|淡点污棉|淡黄染棉|黄染棉)?[一二三四五12345]级"
+)
+COLOR_GRADE_CODE_RE = re.compile(
+    r"(?<!\d)(?:11|21|31|41|51|12|22|32|42|52|13|23|33|43|53)(?!\d)"
+)
+KNOWN_COLOR_GRADE_CODES = {
+    11,
+    12,
+    13,
+    21,
+    22,
+    23,
+    31,
+    32,
+    33,
+    41,
+    42,
+    43,
+    51,
+    52,
+    53,
+}
 
 
 def parse_float(value: Any, default: float = 0.0) -> float:
@@ -19,10 +45,18 @@ def parse_float(value: Any, default: float = 0.0) -> float:
     if value is None or pd.isna(value):
         return default
 
-    try:
+    if isinstance(value, (int, float)):
         return float(value)
-    except (TypeError, ValueError):
+
+    text = unicodedata.normalize("NFKC", str(value)).strip().replace(",", "")
+    if not text:
         return default
+
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        match = NUMBER_RE.search(text)
+        return float(match.group()) if match else default
 
 
 def extract_max_color_percent(value: Any) -> float:
@@ -31,8 +65,29 @@ def extract_max_color_percent(value: Any) -> float:
     if value is None or pd.isna(value):
         return 0.0
 
-    matches = PERCENT_RE.findall(str(value))
-    return max((float(match) for match in matches), default=0.0)
+    if isinstance(value, (int, float)):
+        numeric_value = float(value)
+        if numeric_value.is_integer() and int(numeric_value) in KNOWN_COLOR_GRADE_CODES:
+            return 100.0
+        if numeric_value.is_integer() and 1 <= int(numeric_value) <= 5:
+            return 100.0
+        return numeric_value if 0 <= numeric_value <= 100 else 0.0
+
+    text = unicodedata.normalize("NFKC", str(value)).strip()
+    if not text or text in {"-", "--", "—", "无"}:
+        return 0.0
+
+    values = [
+        float(match)
+        for match in [*PERCENT_RE.findall(text), *COLOR_RATIO_RE.findall(text)]
+    ]
+    if values:
+        return max(values)
+
+    if COLOR_GRADE_RE.search(text) or COLOR_GRADE_CODE_RE.search(text):
+        return 100.0
+
+    return 0.0
 
 
 def score_record(record: Record) -> int:

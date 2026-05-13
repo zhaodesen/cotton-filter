@@ -21,8 +21,7 @@ OUTPUT_COLUMNS = (
 )
 
 HEADER_SCAN_ROWS = 30
-MIN_SCORE_GAP = 0
-MAX_SCORE_GAP = 200
+MAX_SCORE_GAP = 100
 
 # key 为统一字段名，value 为可能出现的列名。
 COLUMN_ALIASES: dict[str, list[str]] = {
@@ -30,13 +29,16 @@ COLUMN_ALIASES: dict[str, list[str]] = {
     "颜色级": [
         "颜色级",
         "颜色级占比",
+        "颜色级比例",
         "颜色级别",
         "颜色级/品级",
         "颜色级品级",
         "色级",
         "品级",
+        "品级占比",
+        "品级比例",
     ],
-    "长度": ["长度", "平均长度"],
+    "长度": ["长度", "平均长度", "长度级比例"],
     "强力": ["强力", "比强", "强度", "断裂比强度"],
     "马值": [
         "马值",
@@ -45,6 +47,7 @@ COLUMN_ALIASES: dict[str, list[str]] = {
         "平均码值",
         "马克隆",
         "马克隆值",
+        "马克隆值级",
         "mic",
         "mic值",
     ],

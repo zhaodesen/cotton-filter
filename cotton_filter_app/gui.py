@@ -180,27 +180,13 @@ class CottonFilterApp:
         )
         self.add_files_btn.grid(row=0, column=0, padx=(0, 8))
 
-        self.output_btn = self.ttk.Button(
-            actions,
-            text="选择保存目录",
-            command=self.choose_output_dir,
-        )
-        self.output_btn.grid(row=0, column=1, padx=(0, 8))
-
-        self.clear_btn = self.ttk.Button(
-            actions,
-            text="清空",
-            command=self.clear_files,
-        )
-        self.clear_btn.grid(row=0, column=2, padx=(0, 14))
-
         self.run_btn = self.ttk.Button(
             actions,
             text="开始筛选",
             command=self.start_processing,
             style="Primary.TButton",
         )
-        self.run_btn.grid(row=0, column=3, padx=(0, 8))
+        self.run_btn.grid(row=0, column=1, padx=(6, 8))
 
     def build_summary(self, parent: Any) -> None:
         """构建摘要栏。"""
@@ -249,7 +235,13 @@ class CottonFilterApp:
             header,
             text="支持 .xlsx / .xls",
             style="Hint.TLabel",
-        ).grid(row=0, column=1, sticky="e")
+        ).grid(row=0, column=1, sticky="e", padx=(0, 10))
+        self.clear_btn = self.ttk.Button(
+            header,
+            text="清空",
+            command=self.clear_files,
+        )
+        self.clear_btn.grid(row=0, column=2, sticky="e")
 
         self.file_list = self.ttk.Treeview(
             box,
@@ -341,13 +333,19 @@ class CottonFilterApp:
             textvariable=self.status_var,
             style="Status.TLabel",
         ).grid(row=0, column=0, sticky="w")
+        self.output_btn = self.ttk.Button(
+            bottom,
+            text="选择保存目录",
+            command=self.choose_output_dir,
+        )
+        self.output_btn.grid(row=0, column=1, sticky="e", padx=(0, 8))
         self.open_dir_btn = self.ttk.Button(
             bottom,
             text="打开保存目录",
             command=self.open_output_dir,
             state=self.tk.DISABLED,
         )
-        self.open_dir_btn.grid(row=0, column=1, sticky="e")
+        self.open_dir_btn.grid(row=0, column=2, sticky="e")
 
     def create_panel(self, parent: Any) -> Any:
         """创建轻量面板。"""
@@ -449,11 +447,11 @@ class CottonFilterApp:
         """追加日志文本。"""
 
         tag = "muted"
-        if text.startswith(("OK", "完成", "文件完成", "写出结果")):
+        if text.startswith(("成功", "完成")):
             tag = "success"
-        elif text.startswith(("x", "文件出错", "处理线程异常")) or "出错" in text:
+        elif text.startswith(("失败", "处理线程异常")) or "失败" in text:
             tag = "error"
-        elif text.startswith(("开始筛选", "处理文件", "读取工作簿")):
+        elif text.startswith("开始筛选"):
             tag = "strong"
 
         self.log.configure(state="normal")
@@ -513,7 +511,7 @@ class CottonFilterApp:
         self.processing_active = True
         self.open_dir_btn.configure(state=self.tk.DISABLED)
         self.status_var.set("正在筛选...")
-        self.append_log(f"开始筛选 {len(files)} 个文件 -> {output_dir}")
+        self.append_log(f"开始筛选: {len(files)} 个文件")
 
         thread = threading.Thread(
             target=self.process_worker,
@@ -527,11 +525,7 @@ class CottonFilterApp:
         """后台处理文件，完成后切回主线程更新 UI。"""
 
         try:
-            results = filter_files(
-                files,
-                out_dir,
-                progress_callback=self.append_log_from_worker,
-            )
+            results = filter_files(files, out_dir)
         except Exception as error:
             self.append_log_from_worker(f"处理线程异常: {error}")
             results = [
@@ -550,18 +544,15 @@ class CottonFilterApp:
 
         for result in results:
             if result.error:
-                self.append_log(f"x {result.src.name}: {result.error}")
+                self.append_log(f"失败: {result.src.name}，{result.error}")
             elif result.kept and result.out is not None:
-                self.append_log(
-                    f"OK {result.src.name}: 保留 {result.kept} 行 -> "
-                    f"{result.out.name}"
-                )
+                self.append_log(f"成功: {result.src.name}，筛出 {result.kept} 行")
             else:
-                self.append_log(f"- {result.src.name}: 保留 0 行")
+                self.append_log(f"成功: {result.src.name}，筛出 0 行")
 
         self.append_log(
-            f"完成: 文件 {len(results)} 个, 保留 {total} 行, "
-            f"出错 {errors} 个"
+            f"完成: 成功 {len(results) - errors} 个，失败 {errors} 个，"
+            f"共筛出 {total} 行"
         )
         self.status_var.set(f"完成: 保留 {total} 行, 出错 {errors} 个")
         self.set_running(False)

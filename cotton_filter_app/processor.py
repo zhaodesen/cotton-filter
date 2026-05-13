@@ -9,18 +9,101 @@ import pandas as pd
 
 from .constants import (
     MAX_SCORE_GAP,
-    MIN_SCORE_GAP,
     OUTPUT_COLUMNS,
     REQUIRED_COLUMNS,
 )
-from .header import build_column_map, find_header_row
+from .header import build_column_map, find_header_row, normalize_text
 from .models import ColumnMap, Record
 from .scoring import parse_float, score_record
 
 ProgressLogger = Callable[[str], None]
+ColorColumns = list[tuple[int, str]]
 
 
-def build_record(row: pd.Series, column_map: ColumnMap) -> Record | None:
+def is_empty_cell(value: object) -> bool:
+    """判断单元格是否为空。"""
+
+    return value is None or pd.isna(value) or str(value).strip() == ""
+
+
+def is_color_grade_label(value: object) -> bool:
+    """判断组合表头中的子列是否是颜色级标签。"""
+
+    text = normalize_text(value)
+    if not text or text in {"无", "-", "--"}:
+        return False
+
+    if any(keyword in text for keyword in ("白棉", "污棉", "染棉")):
+        return "级" in text
+
+    return text in {
+        "11",
+        "12",
+        "13",
+        "21",
+        "22",
+        "23",
+        "31",
+        "32",
+        "33",
+        "41",
+        "42",
+        "43",
+        "51",
+        "52",
+        "53",
+    }
+
+
+def detect_color_columns(
+    raw_frame: pd.DataFrame,
+    header_row: int,
+    column_map: ColumnMap,
+) -> ColorColumns:
+    """识别类似“颜色级比例(%)”下分多列的组合表头。"""
+
+    if "颜色级" not in column_map or header_row + 1 >= len(raw_frame):
+        return []
+
+    start_column = column_map["颜色级"]
+    header_cells = raw_frame.iloc[header_row].tolist()
+    subheader_cells = raw_frame.iloc[header_row + 1].tolist()
+    end_column = start_column + 1
+
+    while end_column < len(header_cells) and is_empty_cell(header_cells[end_column]):
+        end_column += 1
+
+    if end_column - start_column <= 1:
+        return []
+
+    color_columns: ColorColumns = []
+    for column_index in range(start_column, end_column):
+        label = subheader_cells[column_index]
+        if is_color_grade_label(label):
+            color_columns.append((column_index, str(label).replace("\n", "")))
+
+    return color_columns
+
+
+def build_color_summary(row: pd.Series, color_columns: ColorColumns) -> str:
+    """把多列颜色级比例合并成统一的“颜色级:占比%”文本。"""
+
+    parts: list[str] = []
+    for column_index, label in color_columns:
+        value = row.iloc[column_index]
+        percent = parse_float(value, default=float("nan"))
+        if pd.isna(percent) or percent <= 0:
+            continue
+        parts.append(f"{label}:{percent:g}%")
+
+    return "，".join(parts)
+
+
+def build_record(
+    row: pd.Series,
+    column_map: ColumnMap,
+    color_columns: ColorColumns | None = None,
+) -> Record | None:
     """从一行 Excel 数据中构建统一字段记录。"""
 
     basis = parse_float(row.iloc[column_map["基差"]], default=float("nan"))
@@ -31,6 +114,11 @@ def build_record(row: pd.Series, column_map: ColumnMap) -> Record | None:
         field_name: row.iloc[column_index]
         for field_name, column_index in column_map.items()
     }
+    if color_columns:
+        color_summary = build_color_summary(row, color_columns)
+        if color_summary:
+            record["颜色级"] = color_summary
+
     record["_基差"] = basis
     record["_得分"] = score_record(record)
     record["_与基差差距"] = basis - record["_得分"]
@@ -42,10 +130,7 @@ def format_output_frame(records: list[Record]) -> pd.DataFrame:
     """筛选并整理最终输出 DataFrame。"""
 
     frame = pd.DataFrame(records)
-    kept = frame[
-        (frame["_与基差差距"] > MIN_SCORE_GAP)
-        & (frame["_与基差差距"] <= MAX_SCORE_GAP)
-    ].copy()
+    kept = frame[frame["_与基差差距"].abs() <= MAX_SCORE_GAP].copy()
 
     kept = kept.rename(columns={"_得分": "得分", "_与基差差距": "与基差差距"})
     available_columns = [
@@ -81,10 +166,11 @@ def process_sheet(
         return None
 
     body = raw_frame.iloc[header_row + 1 :].reset_index(drop=True)
+    color_columns = detect_color_columns(raw_frame, header_row, column_map)
     records = [
         record
         for _, row in body.iterrows()
-        if (record := build_record(row, column_map)) is not None
+        if (record := build_record(row, column_map, color_columns)) is not None
     ]
 
     if log:
