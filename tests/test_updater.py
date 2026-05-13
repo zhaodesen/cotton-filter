@@ -2,21 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from cotton_filter_app.updater import find_release_commit
+from cotton_filter_app.updater import normalize_version
 
 
 class UpdaterTest(unittest.TestCase):
-    def test_find_release_commit_reads_github_release_body(self) -> None:
-        self.assertEqual(
-            find_release_commit(
-                "Built automatically from commit "
-                "324e183a6e917e9612657c5ce3744ff3aba3acee."
-            ),
-            "324e183a6e917e9612657c5ce3744ff3aba3acee",
-        )
+    def test_normalize_version_removes_v_prefix(self) -> None:
+        self.assertEqual(normalize_version("v1.2.3"), "1.2.3")
 
-    def test_find_release_commit_returns_none_without_commit(self) -> None:
-        self.assertIsNone(find_release_commit("cotton-filter latest"))
+    def test_normalize_version_trims_spaces(self) -> None:
+        self.assertEqual(normalize_version("  1.2.3  "), "1.2.3")
 
 
 if __name__ == "__main__":

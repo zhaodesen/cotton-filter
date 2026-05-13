@@ -100,7 +100,7 @@ Excel 表里常见字段包括：
 - `cotton_filter_app/file_utils.py`：批量文件、输出路径和打开目录工具。
 - `cotton_filter_app/gui.py`：Tkinter 图形界面。
 - `README_Windows.md`：Windows 使用说明。
-- `.github/workflows/build.yml`：GitHub Actions 构建流程，使用 Python 3.10，通过 `python -m compileall main.py cotton_filter_app` 校验语法，通过 `python -m pytest` 运行测试，再用 PyInstaller 从 `main.py` 打包 Windows/macOS 应用。
+- `.github/workflows/build.yml`：GitHub Actions 构建流程，仅在推送 `v*` 版本 tag 或手动触发时运行；使用 Python 3.10，通过 `python -m compileall main.py cotton_filter_app` 校验语法，通过 `python -m pytest` 运行测试，再用 PyInstaller 从 `main.py` 打包 Windows/macOS 应用。
 
 当前处理逻辑：
 
@@ -118,8 +118,8 @@ Excel 表里常见字段包括：
 - GUI 采用克制的桌面工具样式：原生 ttk 按钮、浅色面板、表格式文件列表、浅色日志区和少量墨绿色状态强调，不引入额外前端依赖。
 - CI 构建入口是 `main.py`，不要再引用已删除的旧入口 `cotton_filter.py`。
 - Windows 版本点窗口关闭按钮时不直接退出，而是隐藏到系统托盘；托盘菜单提供“打开 cotton-filter”和“退出”。该能力依赖 `pystray` 和 `Pillow`，macOS 仍保持关闭即退出。
-- Windows 打包版本启动后会后台检查 GitHub `latest` release；通过 release body 中的 commit 和 `cotton_filter_app/build_info.py` 的 `BUILD_COMMIT` 判断是否有新版本。发现新版时提示用户下载，下载完成后用临时 PowerShell 脚本替换当前 exe 并重启。
-- CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.sha`，避免在 workflow 里写复杂跨平台内联 Python。
+- Windows 打包版本启动后会后台检查 GitHub latest release；通过 release 的 `tag_name` 和 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION` 判断是否有新版本。发现新版时提示用户下载，下载完成后用临时 PowerShell 脚本替换当前 exe 并重启。
+- CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.ref_name` 版本号，避免在 workflow 里写复杂跨平台内联 Python。
 
 修改时注意：
 

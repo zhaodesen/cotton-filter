@@ -3,4 +3,4 @@
 from __future__ import annotations
 
 
-BUILD_COMMIT = "dev"
+BUILD_VERSION = "dev"

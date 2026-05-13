@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -13,7 +12,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from .build_info import BUILD_COMMIT
+from .build_info import BUILD_VERSION
 from .constants import APP_NAME
 
 LATEST_RELEASE_API = "https://api.github.com/repos/zhaodesen/cotton-filter/releases/latest"
@@ -25,7 +24,7 @@ REQUEST_TIMEOUT_SECONDS = 15
 class UpdateInfo:
     """可安装更新信息。"""
 
-    commit: str
+    version: str
     download_url: str
     release_url: str
 
@@ -36,19 +35,19 @@ def can_self_update() -> bool:
     return sys.platform.startswith("win") and getattr(sys, "frozen", False)
 
 
-def current_commit() -> str:
-    """返回当前构建 commit。"""
+def current_version() -> str:
+    """返回当前构建版本。"""
 
-    return BUILD_COMMIT.strip()
+    return normalize_version(BUILD_VERSION)
 
 
-def find_release_commit(body: str) -> str | None:
-    """从 release body 中提取构建 commit。"""
+def normalize_version(version: str) -> str:
+    """统一版本号格式，允许 v1.2.3 和 1.2.3 比较。"""
 
-    match = re.search(r"commit\s+([0-9a-f]{7,40})", body, re.IGNORECASE)
-    if not match:
-        return None
-    return match.group(1)
+    cleaned = version.strip()
+    if cleaned.lower().startswith("v"):
+        cleaned = cleaned[1:]
+    return cleaned
 
 
 def get_update_info() -> UpdateInfo | None:
@@ -57,8 +56,8 @@ def get_update_info() -> UpdateInfo | None:
     if not can_self_update():
         return None
 
-    commit = current_commit()
-    if commit == "dev":
+    version = current_version()
+    if version == "dev":
         return None
 
     request = urllib.request.Request(
@@ -71,8 +70,8 @@ def get_update_info() -> UpdateInfo | None:
     with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
         release = json.loads(response.read().decode("utf-8"))
 
-    release_commit = find_release_commit(str(release.get("body", "")))
-    if not release_commit or release_commit.startswith(commit) or commit.startswith(release_commit):
+    release_version = normalize_version(str(release.get("tag_name", "")))
+    if not release_version or release_version == version:
         return None
 
     for asset in release.get("assets", []):
@@ -80,7 +79,7 @@ def get_update_info() -> UpdateInfo | None:
             download_url = asset.get("browser_download_url")
             if download_url:
                 return UpdateInfo(
-                    commit=release_commit,
+                    version=release_version,
                     download_url=str(download_url),
                     release_url=str(release.get("html_url", "")),
                 )
