@@ -8,6 +8,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Iterable
 
+from .build_info import BUILD_VERSION
 from .constants import APP_NAME
 from .file_utils import (
     default_output_dir,
@@ -51,6 +52,8 @@ class CottonFilterApp:
         self.tray_thread: threading.Thread | None = None
         self.is_quitting = False
         self.is_windows = sys.platform.startswith("win")
+        self.display_version = self.format_display_version(BUILD_VERSION)
+        self.display_name = f"{APP_NAME} {self.display_version}"
 
         self.status_var = tk.StringVar(value="请选择 Excel 文件或文件夹")
         self.output_var = tk.StringVar(value="未选择保存目录")
@@ -62,6 +65,7 @@ class CottonFilterApp:
         self.run_btn: Any = None
         self.clear_log_btn: Any = None
         self.open_dir_btn: Any = None
+        self.update_btn: Any = None
         self.file_list: Any = None
         self.log: Any = None
 
@@ -69,12 +73,11 @@ class CottonFilterApp:
         self.configure_styles()
         self.build_layout()
         self.root.protocol("WM_DELETE_WINDOW", self.handle_close)
-        self.root.after(1500, self.start_update_check)
 
     def configure_root(self) -> None:
         """设置主窗口。"""
 
-        self.root.title(APP_NAME)
+        self.root.title(self.display_name)
         self.root.geometry("920x640")
         self.root.minsize(820, 560)
         self.root.configure(bg=self.COLORS["window"])
@@ -167,11 +170,17 @@ class CottonFilterApp:
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
 
-        self.ttk.Label(header, text="Excel 筛选工具", style="Title.TLabel").grid(
+        self.ttk.Label(header, text=f"Excel 筛选工具 {self.display_version}", style="Title.TLabel").grid(
             row=0,
             column=0,
             sticky="w",
         )
+        self.update_btn = self.ttk.Button(
+            header,
+            text="检查更新",
+            command=self.start_update_check,
+        )
+        self.update_btn.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
 
     def build_actions(self, parent: Any) -> None:
@@ -369,6 +378,18 @@ class CottonFilterApp:
         )
         return panel
 
+    def format_display_version(self, version: str) -> str:
+        """格式化 GUI 展示版本。"""
+
+        cleaned = version.strip()
+        if not cleaned:
+            cleaned = "dev"
+        if cleaned.lower() == "dev":
+            return "dev"
+        if cleaned.lower().startswith("v"):
+            return cleaned
+        return f"v{cleaned}"
+
     def add_files(self) -> None:
         """添加 Excel 文件。"""
 
@@ -448,6 +469,7 @@ class CottonFilterApp:
             self.output_btn,
             self.run_btn,
             self.clear_log_btn,
+            self.update_btn,
         ):
             button.configure(state=state)
 
@@ -576,8 +598,10 @@ class CottonFilterApp:
             open_folder(self.output_dir)
 
     def start_update_check(self) -> None:
-        """后台检查 Windows 自动更新。"""
+        """手动后台检查 Windows 更新。"""
 
+        self.update_btn.configure(state=self.tk.DISABLED)
+        self.status_var.set("正在检查更新...")
         thread = threading.Thread(target=self.update_check_worker, daemon=True)
         thread.start()
 
@@ -586,24 +610,50 @@ class CottonFilterApp:
 
         try:
             update = get_update_info()
-        except Exception:
+        except Exception as error:
+            self.root.after(0, lambda: self.show_update_check_error(error))
             return
 
         if update is not None:
             self.root.after(0, lambda: self.prompt_update(update))
+            return
+
+        self.root.after(0, self.show_no_update)
+
+    def show_no_update(self) -> None:
+        """提示当前无需更新。"""
+
+        from tkinter import messagebox
+
+        self.update_btn.configure(state=self.tk.NORMAL)
+        self.status_var.set("当前已是最新版本")
+        messagebox.showinfo(APP_NAME, "当前已是最新版本。")
+
+    def show_update_check_error(self, error: Exception) -> None:
+        """显示检查更新失败提示。"""
+
+        from tkinter import messagebox
+
+        self.update_btn.configure(state=self.tk.NORMAL)
+        self.status_var.set("检查更新失败")
+        messagebox.showerror(APP_NAME, f"检查更新失败: {error}")
 
     def prompt_update(self, update: Any) -> None:
         """提示用户下载并安装新版本。"""
 
         from tkinter import messagebox
 
+        self.status_var.set(f"发现新版本: {update.version}")
         should_update = messagebox.askyesno(
             APP_NAME,
             "发现新版本，是否现在下载并重启更新？",
         )
         if not should_update:
+            self.update_btn.configure(state=self.tk.NORMAL)
+            self.status_var.set("已取消更新")
             return
 
+        self.update_btn.configure(state=self.tk.DISABLED)
         self.status_var.set("正在下载更新...")
         thread = threading.Thread(target=self.install_update_worker, args=(update,), daemon=True)
         thread.start()
@@ -626,6 +676,7 @@ class CottonFilterApp:
         from tkinter import messagebox
 
         self.status_var.set("更新失败")
+        self.update_btn.configure(state=self.tk.NORMAL)
         messagebox.showerror(APP_NAME, f"更新失败: {error}")
 
     def handle_close(self) -> None:

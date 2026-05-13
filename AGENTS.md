@@ -116,9 +116,10 @@ Excel 表里常见字段包括：
 - 输出到 `cotton-filter-results`，文件名使用原文件名；重名时追加 `_2`、`_3` 等编号。
 - GUI 处理日志保持精简：只展示开始筛选、每个文件成功/失败、筛出行数和最终汇总。
 - GUI 采用克制的桌面工具样式：原生 ttk 按钮、浅色面板、表格式文件列表、浅色日志区和少量墨绿色状态强调，不引入额外前端依赖。
+- GUI 窗口标题和顶部应用名需要展示当前构建版本；版本来自 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION`，本地开发态显示为 `dev`。
 - CI 构建入口是 `main.py`，不要再引用已删除的旧入口 `cotton_filter.py`。
 - Windows 版本点窗口关闭按钮时不直接退出，而是隐藏到系统托盘；托盘菜单提供“打开 cotton-filter”和“退出”。该能力依赖 `pystray` 和 `Pillow`，macOS 仍保持关闭即退出。
-- Windows 打包版本启动后会后台检查 GitHub latest release；通过 release 的 `tag_name` 和 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION` 判断是否有新版本。发现新版时提示用户下载，下载完成后用临时 PowerShell 脚本替换当前 exe 并重启。
+- Windows 打包版本不再启动后自动检查更新；GUI 右上角提供“检查更新”按钮，点击后检查 GitHub latest release，通过 release 的 `tag_name` 和 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION` 判断是否有新版本。发现新版时提示用户下载，下载完成后用临时 PowerShell 脚本替换当前 exe 并重启。
 - CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.ref_name` 版本号，避免在 workflow 里写复杂跨平台内联 Python。
 
 修改时注意：
