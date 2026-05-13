@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import sys
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Iterable
@@ -45,6 +46,10 @@ class CottonFilterApp:
         self.log_queue: Queue[str] = Queue()
         self.result_queue: Queue[list[FileResult]] = Queue()
         self.processing_active = False
+        self.tray_icon: Any = None
+        self.tray_thread: threading.Thread | None = None
+        self.is_quitting = False
+        self.is_windows = sys.platform.startswith("win")
 
         self.status_var = tk.StringVar(value="请选择 Excel 文件或文件夹")
         self.output_var = tk.StringVar(value="未选择保存目录")
@@ -62,6 +67,7 @@ class CottonFilterApp:
         self.configure_root()
         self.configure_styles()
         self.build_layout()
+        self.root.protocol("WM_DELETE_WINDOW", self.handle_close)
 
     def configure_root(self) -> None:
         """设置主窗口。"""
@@ -566,6 +572,69 @@ class CottonFilterApp:
 
         if self.output_dir:
             open_folder(self.output_dir)
+
+    def handle_close(self) -> None:
+        """处理窗口关闭按钮。"""
+
+        if self.is_windows:
+            self.minimize_to_tray()
+            return
+
+        self.quit_app()
+
+    def minimize_to_tray(self) -> None:
+        """隐藏主窗口并保留 Windows 托盘入口。"""
+
+        self.ensure_tray_icon()
+        self.root.withdraw()
+
+    def show_window(self) -> None:
+        """从托盘恢复主窗口。"""
+
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
+    def quit_app(self) -> None:
+        """退出应用并清理托盘图标。"""
+
+        if self.is_quitting:
+            return
+
+        self.is_quitting = True
+        if self.tray_icon is not None:
+            self.tray_icon.stop()
+            self.tray_icon = None
+        self.root.destroy()
+
+    def ensure_tray_icon(self) -> None:
+        """首次最小化时创建托盘图标。"""
+
+        if self.tray_icon is not None:
+            return
+
+        import pystray
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (64, 64), "#166c5f")
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((16, 13, 48, 45), fill="#ffffff")
+        draw.rectangle((28, 39, 36, 52), fill="#ffffff")
+
+        menu = pystray.Menu(
+            pystray.MenuItem(
+                "打开 cotton-filter",
+                lambda _icon, _item: self.root.after(0, self.show_window),
+                default=True,
+            ),
+            pystray.MenuItem(
+                "退出",
+                lambda _icon, _item: self.root.after(0, self.quit_app),
+            ),
+        )
+        self.tray_icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
 
 
 def run_gui() -> int:
