@@ -119,6 +119,7 @@ Excel 表里常见字段包括：
 - CI 构建入口是 `main.py`，不要再引用已删除的旧入口 `cotton_filter.py`。
 - Windows 版本点窗口关闭按钮时不直接退出，而是隐藏到系统托盘；托盘菜单提供“打开 cotton-filter”和“退出”。该能力依赖 `pystray` 和 `Pillow`，macOS 仍保持关闭即退出。
 - Windows 打包版本启动后会后台检查 GitHub `latest` release；通过 release body 中的 commit 和 `cotton_filter_app/build_info.py` 的 `BUILD_COMMIT` 判断是否有新版本。发现新版时提示用户下载，下载完成后用临时 PowerShell 脚本替换当前 exe 并重启。
+- CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.sha`，避免在 workflow 里写复杂跨平台内联 Python。
 
 修改时注意：
 
