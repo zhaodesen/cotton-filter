@@ -33,7 +33,7 @@ jobs:
 
       - name: Build Windows app
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --windowed --name cotton-filter --clean cotton_filter.py
+        run: pyinstaller --onefile --windowed --name cotton-filter --clean main.py
 
       - name: Publish Windows release asset
         if: runner.os == 'Windows' && github.ref == 'refs/heads/main'

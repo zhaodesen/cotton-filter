@@ -2,7 +2,7 @@
 !.gitignore
 !.github/
 !.github/**
-!cotton_filter.py
+!main.py
 !cotton_filter_app/
 !cotton_filter_app/**
 __pycache__/
@@ -12,3 +12,4 @@ __pycache__/
 !cotton-filter.bat
 !README_Windows.md
 !AGENTS.md
+.idea
