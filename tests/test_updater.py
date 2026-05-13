@@ -5,7 +5,7 @@ import urllib.error
 from unittest import mock
 
 from cotton_filter_app import updater
-from cotton_filter_app.updater import get_update_info, normalize_version
+from cotton_filter_app.updater import get_update_info, normalize_version, validate_digest
 
 
 class UpdaterTest(unittest.TestCase):
@@ -18,7 +18,7 @@ class UpdaterTest(unittest.TestCase):
     @mock.patch.object(updater, "can_self_update", return_value=True)
     @mock.patch.object(updater, "BUILD_VERSION", "v1.0.0")
     @mock.patch("urllib.request.urlopen")
-    def test_get_update_info_treats_missing_latest_release_as_no_update(
+    def test_get_update_info_reports_inaccessible_latest_release(
         self,
         urlopen: mock.Mock,
         _can_self_update: mock.Mock,
@@ -31,7 +31,19 @@ class UpdaterTest(unittest.TestCase):
             fp=None,
         )
 
-        self.assertIsNone(get_update_info())
+        with self.assertRaisesRegex(RuntimeError, "无法访问 GitHub latest release"):
+            get_update_info()
+
+    def test_validate_digest_rejects_mismatched_sha256(self) -> None:
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        with TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "update.exe"
+            file_path.write_bytes(b"not the expected file")
+
+            with self.assertRaisesRegex(RuntimeError, "校验失败"):
+                validate_digest(file_path, "sha256:" + "0" * 64)
 
 
 if __name__ == "__main__":

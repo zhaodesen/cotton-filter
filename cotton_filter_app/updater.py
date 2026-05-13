@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -28,6 +29,7 @@ class UpdateInfo:
     version: str
     download_url: str
     release_url: str
+    digest: str = ""
 
 
 def can_self_update() -> bool:
@@ -73,7 +75,9 @@ def get_update_info() -> UpdateInfo | None:
             release = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         if error.code == 404:
-            return None
+            raise RuntimeError(
+                "无法访问 GitHub latest release，请确认仓库和 Release 对用户公开"
+            ) from error
         raise RuntimeError(f"GitHub 更新接口返回 HTTP {error.code}") from error
     except urllib.error.URLError as error:
         reason = getattr(error, "reason", None) or error
@@ -91,6 +95,7 @@ def get_update_info() -> UpdateInfo | None:
                     version=release_version,
                     download_url=str(download_url),
                     release_url=str(release.get("html_url", "")),
+                    digest=str(asset.get("digest", "")),
                 )
 
     raise RuntimeError(f"最新版本 {release_version} 缺少 Windows 更新文件")
@@ -111,8 +116,27 @@ def download_update(update: UpdateInfo) -> Path:
 
     if target_path.stat().st_size <= 0:
         raise RuntimeError("下载的更新文件为空")
+    if update.digest:
+        validate_digest(target_path, update.digest)
 
     return target_path
+
+
+def validate_digest(path: Path, expected_digest: str) -> None:
+    """校验 GitHub release asset 摘要。"""
+
+    if not expected_digest.startswith("sha256:"):
+        return
+
+    expected = expected_digest.removeprefix("sha256:").lower()
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+
+    actual = digest.hexdigest().lower()
+    if actual != expected:
+        raise RuntimeError("下载的更新文件校验失败，请重新检查更新")
 
 
 def install_update_and_restart(downloaded_exe: Path) -> None:
