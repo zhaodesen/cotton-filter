@@ -6,11 +6,13 @@ import os
 import platform
 import subprocess
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Callable, Iterable, Sequence
 
 from .constants import EXCEL_SUFFIXES, RESULT_DIR_NAME
 from .models import FileResult
 from .processor import filter_file
+
+ProgressLogger = Callable[[str], None]
 
 
 def unique_output_path(out_dir: Path, src: Path) -> Path:
@@ -26,16 +28,22 @@ def unique_output_path(out_dir: Path, src: Path) -> Path:
     return candidate
 
 
-def filter_files(files: Sequence[Path], out_dir: Path) -> list[FileResult]:
+def filter_files(
+    files: Sequence[Path],
+    out_dir: Path,
+    progress_callback: ProgressLogger | None = None,
+) -> list[FileResult]:
     """批量处理文件。"""
 
     out_dir.mkdir(parents=True, exist_ok=True)
     results: list[FileResult] = []
 
-    for src in files:
+    for index, src in enumerate(files, start=1):
         try:
+            if progress_callback:
+                progress_callback(f"处理文件 {index}/{len(files)}: {src.name}")
             out = unique_output_path(out_dir, src)
-            kept = filter_file(src, out)
+            kept = filter_file(src, out, log=progress_callback)
 
             if kept == 0 and out.exists():
                 out.unlink()
@@ -43,7 +51,11 @@ def filter_files(files: Sequence[Path], out_dir: Path) -> list[FileResult]:
             results.append(
                 FileResult(src=src, out=out if kept else None, kept=kept)
             )
+            if progress_callback:
+                progress_callback(f"文件完成: {src.name}，保留 {kept} 行")
         except Exception as error:
+            if progress_callback:
+                progress_callback(f"文件出错: {src.name}，{error}")
             results.append(
                 FileResult(src=src, out=None, kept=0, error=str(error))
             )

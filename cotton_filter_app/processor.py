@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 
@@ -15,6 +16,8 @@ from .constants import (
 from .header import build_column_map, find_header_row
 from .models import ColumnMap, Record
 from .scoring import parse_float, score_record
+
+ProgressLogger = Callable[[str], None]
 
 
 def build_record(row: pd.Series, column_map: ColumnMap) -> Record | None:
@@ -51,15 +54,30 @@ def format_output_frame(records: list[Record]) -> pd.DataFrame:
     return kept[available_columns]
 
 
-def process_sheet(raw_frame: pd.DataFrame) -> pd.DataFrame | None:
+def process_sheet(
+    raw_frame: pd.DataFrame,
+    log: ProgressLogger | None = None,
+    sheet_name: str = "",
+) -> pd.DataFrame | None:
     """处理单个 sheet；非数据表或无保留行时返回 None。"""
 
+    log_prefix = f"[{sheet_name}] " if sheet_name else ""
     header_row = find_header_row(raw_frame)
     if header_row < 0:
+        if log:
+            log(f"{log_prefix}未识别到表头，跳过")
         return None
 
+    if log:
+        log(f"{log_prefix}识别到表头行: 第 {header_row + 1} 行")
+
     column_map = build_column_map(raw_frame.iloc[header_row].tolist())
-    if not all(column_name in column_map for column_name in REQUIRED_COLUMNS):
+    missing_columns = [
+        column_name for column_name in REQUIRED_COLUMNS if column_name not in column_map
+    ]
+    if missing_columns:
+        if log:
+            log(f"{log_prefix}缺少必需字段: {', '.join(missing_columns)}，跳过")
         return None
 
     body = raw_frame.iloc[header_row + 1 :].reset_index(drop=True)
@@ -69,22 +87,37 @@ def process_sheet(raw_frame: pd.DataFrame) -> pd.DataFrame | None:
         if (record := build_record(row, column_map)) is not None
     ]
 
+    if log:
+        log(f"{log_prefix}数据行 {len(body)} 行，有效基差行 {len(records)} 行")
+
     if not records:
+        if log:
+            log(f"{log_prefix}没有可评分数据，跳过")
         return None
 
     output_frame = format_output_frame(records)
+    if log:
+        log(f"{log_prefix}命中筛选条件 {len(output_frame)} 行")
     return output_frame if len(output_frame) else None
 
 
-def filter_file(src: Path, dst: Path) -> int:
+def filter_file(src: Path, dst: Path, log: ProgressLogger | None = None) -> int:
     """处理单个 Excel 文件，返回保留行数。"""
 
+    if log:
+        log(f"读取工作簿: {src.name}")
     excel_file = pd.ExcelFile(src)
+    if log:
+        log(f"发现 {len(excel_file.sheet_names)} 个 sheet: {', '.join(excel_file.sheet_names)}")
     sheet_results: list[pd.DataFrame] = []
 
     for sheet_name in excel_file.sheet_names:
-        raw_frame = pd.read_excel(src, sheet_name=sheet_name, header=None)
-        result = process_sheet(raw_frame)
+        if log:
+            log(f"开始读取 sheet: {sheet_name}")
+        raw_frame = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
+        if log:
+            log(f"[{sheet_name}] 原始尺寸: {len(raw_frame)} 行 x {len(raw_frame.columns)} 列")
+        result = process_sheet(raw_frame, log=log, sheet_name=sheet_name)
         if result is None:
             continue
 
@@ -92,8 +125,12 @@ def filter_file(src: Path, dst: Path) -> int:
         sheet_results.append(result)
 
     if not sheet_results:
+        if log:
+            log("当前文件没有命中结果，不生成输出文件")
         return 0
 
     output_frame = pd.concat(sheet_results, ignore_index=True)
+    if log:
+        log(f"写出结果: {dst.name}，共 {len(output_frame)} 行")
     output_frame.to_excel(dst, index=False)
     return len(output_frame)
