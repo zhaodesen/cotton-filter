@@ -4,7 +4,6 @@ import {
   FilePlus2,
   FileSpreadsheet,
   FolderOpen,
-  FolderPlus,
   Loader2,
   Play,
   RefreshCw,
@@ -129,17 +128,6 @@ export default function App() {
     }
   }
 
-  async function selectFolders() {
-    const selected = await open({
-      title: "选择资源文件夹",
-      multiple: true,
-      directory: true,
-    });
-    if (selected) {
-      await addTargets(Array.isArray(selected) ? selected : [selected]);
-    }
-  }
-
   async function selectOutputDir() {
     const selected = await open({
       title: "选择保存目录",
@@ -219,34 +207,28 @@ export default function App() {
   return (
     <main className={activeView === "rules" ? "app-shell rules-mode" : "app-shell"}>
       <section className="topbar">
-        <div>
-          <p className="eyebrow">cotton-filter</p>
-          <h1>Excel 棉花资源筛选</h1>
-        </div>
-        <div className="topbar-actions">
-          <nav className="view-tabs" aria-label="菜单">
-            <button
-              className={activeView === "filter" ? "active" : ""}
-              type="button"
-              onClick={() => setActiveView("filter")}
-            >
-              <FileSpreadsheet size={17} />
-              文件筛选
-            </button>
-            <button
-              className={activeView === "rules" ? "active" : ""}
-              type="button"
-              onClick={() => setActiveView("rules")}
-            >
-              <Database size={17} />
-              规则维护
-            </button>
-          </nav>
-          <button className="ghost-button" type="button" onClick={checkForUpdates}>
-            <RefreshCw size={17} />
-            检查更新
+        <nav className="view-tabs" aria-label="菜单">
+          <button
+            className={activeView === "filter" ? "active" : ""}
+            type="button"
+            onClick={() => setActiveView("filter")}
+          >
+            <FileSpreadsheet size={17} />
+            文件筛选
           </button>
-        </div>
+          <button
+            className={activeView === "rules" ? "active" : ""}
+            type="button"
+            onClick={() => setActiveView("rules")}
+          >
+            <Database size={17} />
+            规则维护
+          </button>
+        </nav>
+        <button className="ghost-button" type="button" onClick={checkForUpdates}>
+          <RefreshCw size={17} />
+          检查更新
+        </button>
       </section>
 
  
@@ -256,10 +238,6 @@ export default function App() {
             <button type="button" onClick={selectFiles} disabled={!backendReady}>
               <FilePlus2 size={18} />
               添加 Excel
-            </button>
-            <button type="button" onClick={selectFolders} disabled={!backendReady}>
-              <FolderPlus size={18} />
-              添加文件夹
             </button>
             <button type="button" onClick={selectOutputDir} disabled={!backendReady}>
               <FolderOpen size={18} />

@@ -1,4 +1,4 @@
-import { Database, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
@@ -45,7 +45,7 @@ const DEFAULT_STANDARD_FIELDS = [
 ];
 
 const DEFAULT_DATA_FORM: DataRuleForm = {
-  field_name: "颜色级",
+  field_name: "",
   rule_name: "",
   rule_type: "value_alias",
   match_value: "",
@@ -101,6 +101,15 @@ function formatRange(rule: DataRule): string {
   return `${left} / ${right}`;
 }
 
+function ruleSummary(rule: DataRule): string {
+  const parts = [RULE_TYPE_LABELS[rule.rule_type], formatRange(rule)];
+  if (rule.score_delta !== null && rule.score_delta !== undefined) {
+    const sign = rule.score_delta > 0 ? "+" : "";
+    parts.push(`${sign}${rule.score_delta}分`);
+  }
+  return parts.filter(Boolean).join(" · ");
+}
+
 export default function RulesView({
   baseUrl,
   backendReady,
@@ -111,13 +120,19 @@ export default function RulesView({
   const [dataForm, setDataForm] = useState<DataRuleForm>(DEFAULT_DATA_FORM);
   const [aliasDialogField, setAliasDialogField] = useState<string | null>(null);
   const [aliasValue, setAliasValue] = useState("");
+  const [dataDialogField, setDataDialogField] = useState<string | null>(null);
+  const [openColumn, setOpenColumn] = useState(true);
+  const [openData, setOpenData] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState("");
 
   const standardFields = useMemo(() => {
-    const fields = columnRules.map((rule) => rule.field_name);
-    return Array.from(new Set([...DEFAULT_STANDARD_FIELDS, ...fields]));
-  }, [columnRules]);
+    const extra = [
+      ...columnRules.map((rule) => rule.field_name),
+      ...dataRules.map((rule) => rule.field_name),
+    ];
+    return Array.from(new Set([...DEFAULT_STANDARD_FIELDS, ...extra]));
+  }, [columnRules, dataRules]);
 
   const columnRulesByField = useMemo(() => {
     const groups = new Map<string, ColumnRule[]>();
@@ -130,10 +145,31 @@ export default function RulesView({
       groups.set(rule.field_name, rules);
     }
     for (const rules of groups.values()) {
-      rules.sort((first, second) => first.alias.localeCompare(second.alias, "zh-CN"));
+      rules.sort((first, second) =>
+        first.alias.localeCompare(second.alias, "zh-CN"),
+      );
     }
     return groups;
   }, [columnRules, standardFields]);
+
+  const dataRulesByField = useMemo(() => {
+    const groups = new Map<string, DataRule[]>();
+    for (const fieldName of standardFields) {
+      groups.set(fieldName, []);
+    }
+    for (const rule of dataRules) {
+      const rules = groups.get(rule.field_name) || [];
+      rules.push(rule);
+      groups.set(rule.field_name, rules);
+    }
+    for (const rules of groups.values()) {
+      rules.sort(
+        (first, second) =>
+          first.sort_order - second.sort_order || first.id - second.id,
+      );
+    }
+    return groups;
+  }, [dataRules, standardFields]);
 
   async function reloadRules() {
     if (!baseUrl) {
@@ -166,6 +202,17 @@ export default function RulesView({
     setAliasValue("");
   }
 
+  function openDataDialog(fieldName: string) {
+    setDataForm({ ...DEFAULT_DATA_FORM, field_name: fieldName });
+    setDataDialogField(fieldName);
+    setErrorText("");
+  }
+
+  function closeDataDialog() {
+    setDataDialogField(null);
+    setDataForm(DEFAULT_DATA_FORM);
+  }
+
   async function handleAliasSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const alias = aliasValue.trim();
@@ -193,7 +240,7 @@ export default function RulesView({
 
   async function handleDataSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!baseUrl || isSaving) {
+    if (!baseUrl || !dataDialogField || isSaving) {
       return;
     }
 
@@ -215,9 +262,9 @@ export default function RulesView({
         sort_order: Number(dataForm.sort_order || 0),
         notes: dataForm.notes,
       });
-      setDataForm(DEFAULT_DATA_FORM);
       await reloadRules();
-      onLog("数据规则已保存");
+      onLog(`数据规则已保存: ${dataForm.field_name} / ${dataForm.rule_name}`);
+      closeDataDialog();
     } catch (error) {
       setErrorText(formatError(error));
     } finally {
@@ -257,202 +304,165 @@ export default function RulesView({
     try {
       await deleteDataRule(baseUrl, rule.id);
       await reloadRules();
-      onLog(`数据规则已删除: ${rule.rule_name}`);
+      onLog(`数据规则已删除: ${rule.rule_name || rule.field_name}`);
     } catch (error) {
       setErrorText(formatError(error));
     }
   }
+
+  const showRange = dataForm.rule_type !== "value_alias";
+  const showAlias = dataForm.rule_type === "value_alias";
+  const showScore = dataForm.rule_type !== "filter_range";
 
   return (
     <section className="rules-view">
       {errorText ? <div className="rules-error">{errorText}</div> : null}
 
       <div className="rules-grid">
-        <section className="rules-pane column-rules-pane">
-          <div className="pane-header">
+        <section className="rules-pane">
+          <button
+            className="pane-header pane-toggle"
+            type="button"
+            aria-expanded={openColumn}
+            onClick={() => setOpenColumn((value) => !value)}
+          >
             <h2>列名规则</h2>
-            <Database size={17} />
-          </div>
-          <div className="field-rule-list">
-            {standardFields.map((fieldName) => {
-              const aliases = columnRulesByField.get(fieldName) || [];
-              return (
-                <div className="field-rule-row" key={fieldName}>
-                  <strong className="field-rule-name">{fieldName}</strong>
-                  <div className="alias-list">
-                    {aliases.length === 0 ? (
-                      <span className="alias-empty">暂无别名</span>
-                    ) : (
-                      aliases.map((rule) => (
-                        <span className="alias-chip" key={rule.id}>
-                          {rule.alias}
-                          <button
-                            className="chip-delete"
-                            type="button"
-                            title="删除别名"
-                            onClick={() => removeColumn(rule)}
-                            disabled={isSaving}
-                          >
-                            <X size={14} />
-                          </button>
-                        </span>
-                      ))
-                    )}
+            <ChevronDown
+              className={openColumn ? "pane-chevron" : "pane-chevron collapsed"}
+              size={18}
+            />
+          </button>
+          {openColumn ? (
+            <div className="field-rule-list">
+              {standardFields.map((fieldName) => {
+                const aliases = columnRulesByField.get(fieldName) || [];
+                return (
+                  <div className="field-rule-row" key={fieldName}>
+                    <strong className="field-rule-name">{fieldName}</strong>
+                    <div className="alias-list">
+                      {aliases.length === 0 ? (
+                        <span className="alias-empty">暂无别名</span>
+                      ) : (
+                        aliases.map((rule) => (
+                          <span className="alias-chip" key={rule.id}>
+                            {rule.alias}
+                            <button
+                              className="chip-delete"
+                              type="button"
+                              title="删除别名"
+                              onClick={() => removeColumn(rule)}
+                              disabled={isSaving}
+                            >
+                              <X size={14} />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      className="alias-add-button"
+                      type="button"
+                      title={`为 ${fieldName} 新增别名`}
+                      onClick={() => openAliasDialog(fieldName)}
+                      disabled={!backendReady || isSaving}
+                    >
+                      <Plus size={15} />
+                    </button>
                   </div>
-                  <button
-                    className="alias-add-button"
-                    type="button"
-                    title={`为 ${fieldName} 新增别名`}
-                    onClick={() => openAliasDialog(fieldName)}
-                    disabled={!backendReady || isSaving}
-                  >
-                    <Plus size={15} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : null}
         </section>
 
         <section className="rules-pane">
-          <div className="pane-header">
+          <button
+            className="pane-header pane-toggle"
+            type="button"
+            aria-expanded={openData}
+            onClick={() => setOpenData((value) => !value)}
+          >
             <h2>数据规则</h2>
-            <Database size={17} />
-          </div>
-          <form className="rule-form data-rule-form" onSubmit={handleDataSubmit}>
-            <select
-              value={dataForm.rule_type}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  rule_type: event.target.value as DataRule["rule_type"],
-                }))
-              }
-            >
-              <option value="value_alias">值别名</option>
-              <option value="score_range">评分区间</option>
-              <option value="filter_range">过滤区间</option>
-            </select>
-            <input
-              value={dataForm.field_name}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  field_name: event.target.value,
-                }))
-              }
-              placeholder="字段"
+            <ChevronDown
+              className={openData ? "pane-chevron" : "pane-chevron collapsed"}
+              size={18}
             />
-            <input
-              value={dataForm.rule_name}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  rule_name: event.target.value,
-                }))
-              }
-              placeholder="规则名称"
-            />
-            <input
-              value={dataForm.match_value}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  match_value: event.target.value,
-                }))
-              }
-              placeholder="匹配值"
-            />
-            <input
-              value={dataForm.min_value}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  min_value: event.target.value,
-                }))
-              }
-              inputMode="decimal"
-              placeholder="最小值"
-            />
-            <input
-              value={dataForm.max_value}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  max_value: event.target.value,
-                }))
-              }
-              inputMode="decimal"
-              placeholder="最大值"
-            />
-            <input
-              value={dataForm.score_delta}
-              onChange={(event) =>
-                setDataForm((current) => ({
-                  ...current,
-                  score_delta: event.target.value,
-                }))
-              }
-              inputMode="numeric"
-              placeholder="加减分"
-            />
-            <button type="submit" disabled={!backendReady || isSaving}>
-              <Plus size={17} />
-              新增
-            </button>
-          </form>
-          <div className="table-wrap">
-            <table className="rules-table data-rules-table">
-              <thead>
-                <tr>
-                  <th>类型</th>
-                  <th>字段</th>
-                  <th>规则</th>
-                  <th>匹配/区间</th>
-                  <th>加减分</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dataRules.map((rule) => (
-                  <tr key={rule.id}>
-                    <td>{RULE_TYPE_LABELS[rule.rule_type]}</td>
-                    <td>{rule.field_name}</td>
-                    <td>{rule.rule_name}</td>
-                    <td>{formatRange(rule)}</td>
-                    <td>{rule.score_delta ?? ""}</td>
-                    <td>{rule.enabled ? "启用" : "停用"}</td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          className="text-button"
-                          type="button"
-                          onClick={() => toggleData(rule)}
-                        >
-                          {rule.enabled ? "停用" : "启用"}
-                        </button>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          title="删除"
-                          onClick={() => removeData(rule)}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          </button>
+          {openData ? (
+            <div className="field-rule-list">
+              {standardFields.map((fieldName) => {
+                const rules = dataRulesByField.get(fieldName) || [];
+                return (
+                  <div
+                    className="field-rule-row data-rule-row"
+                    key={fieldName}
+                  >
+                    <strong className="field-rule-name">{fieldName}</strong>
+                    <div className="rule-pill-list">
+                      {rules.length === 0 ? (
+                        <span className="alias-empty">暂无规则</span>
+                      ) : (
+                        rules.map((rule) => (
+                          <div
+                            className={
+                              rule.enabled
+                                ? "rule-pill"
+                                : "rule-pill rule-pill-off"
+                            }
+                            key={rule.id}
+                          >
+                            <button
+                              className="rule-pill-body"
+                              type="button"
+                              title={rule.enabled ? "点击停用" : "点击启用"}
+                              onClick={() => toggleData(rule)}
+                            >
+                              <span className="rule-pill-name">
+                                {rule.rule_name ||
+                                  RULE_TYPE_LABELS[rule.rule_type]}
+                              </span>
+                              <span className="rule-pill-meta">
+                                {ruleSummary(rule)}
+                              </span>
+                            </button>
+                            <button
+                              className="chip-delete"
+                              type="button"
+                              title="删除规则"
+                              onClick={() => removeData(rule)}
+                              disabled={isSaving}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      className="alias-add-button"
+                      type="button"
+                      title={`为 ${fieldName} 新增规则`}
+                      onClick={() => openDataDialog(fieldName)}
+                      disabled={!backendReady || isSaving}
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </section>
       </div>
 
       {aliasDialogField ? (
         <div className="modal-backdrop" role="presentation">
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="alias-dialog-title">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="alias-dialog-title"
+          >
             <div className="modal-header">
               <h2 id="alias-dialog-title">新增列名别名</h2>
               <button
@@ -480,13 +490,170 @@ export default function RulesView({
                 />
               </label>
               <div className="modal-actions">
-                <button type="button" onClick={closeAliasDialog} disabled={isSaving}>
+                <button
+                  type="button"
+                  onClick={closeAliasDialog}
+                  disabled={isSaving}
+                >
                   取消
                 </button>
                 <button
                   className="primary-button"
                   type="submit"
                   disabled={!backendReady || isSaving || !aliasValue.trim()}
+                >
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {dataDialogField ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="data-dialog-title"
+          >
+            <div className="modal-header">
+              <h2 id="data-dialog-title">
+                新增数据规则 · {dataDialogField}
+              </h2>
+              <button
+                className="icon-button"
+                type="button"
+                title="关闭"
+                onClick={closeDataDialog}
+                disabled={isSaving}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <form className="modal-form" onSubmit={handleDataSubmit}>
+              <label>
+                <span>规则类型</span>
+                <select
+                  value={dataForm.rule_type}
+                  onChange={(event) =>
+                    setDataForm((current) => ({
+                      ...current,
+                      rule_type: event.target
+                        .value as DataRule["rule_type"],
+                    }))
+                  }
+                >
+                  <option value="value_alias">值别名</option>
+                  <option value="score_range">评分区间</option>
+                  <option value="filter_range">过滤区间</option>
+                </select>
+              </label>
+              <label>
+                <span>规则名称</span>
+                <input
+                  autoFocus
+                  value={dataForm.rule_name}
+                  onChange={(event) =>
+                    setDataForm((current) => ({
+                      ...current,
+                      rule_name: event.target.value,
+                    }))
+                  }
+                  placeholder="便于识别的名称"
+                />
+              </label>
+              {showAlias ? (
+                <>
+                  <label>
+                    <span>匹配值</span>
+                    <input
+                      value={dataForm.match_value}
+                      onChange={(event) =>
+                        setDataForm((current) => ({
+                          ...current,
+                          match_value: event.target.value,
+                        }))
+                      }
+                      placeholder="Excel 中出现的值"
+                    />
+                  </label>
+                  <label>
+                    <span>输出值</span>
+                    <input
+                      value={dataForm.output_value}
+                      onChange={(event) =>
+                        setDataForm((current) => ({
+                          ...current,
+                          output_value: event.target.value,
+                        }))
+                      }
+                      placeholder="替换为的标准值"
+                    />
+                  </label>
+                </>
+              ) : null}
+              {showRange ? (
+                <div className="modal-field-pair">
+                  <label>
+                    <span>最小值</span>
+                    <input
+                      value={dataForm.min_value}
+                      onChange={(event) =>
+                        setDataForm((current) => ({
+                          ...current,
+                          min_value: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      placeholder="不限"
+                    />
+                  </label>
+                  <label>
+                    <span>最大值</span>
+                    <input
+                      value={dataForm.max_value}
+                      onChange={(event) =>
+                        setDataForm((current) => ({
+                          ...current,
+                          max_value: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      placeholder="不限"
+                    />
+                  </label>
+                </div>
+              ) : null}
+              {showScore ? (
+                <label>
+                  <span>加减分</span>
+                  <input
+                    value={dataForm.score_delta}
+                    onChange={(event) =>
+                      setDataForm((current) => ({
+                        ...current,
+                        score_delta: event.target.value,
+                      }))
+                    }
+                    inputMode="numeric"
+                    placeholder="例如 5 或 -3"
+                  />
+                </label>
+              ) : null}
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  onClick={closeDataDialog}
+                  disabled={isSaving}
+                >
+                  取消
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={!backendReady || isSaving}
                 >
                   保存
                 </button>
