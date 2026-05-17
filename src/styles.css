@@ -1,11 +1,72 @@
+/* ============================================================
+   cotton-filter · 深色精致主题
+   设计 token 系统 — 改色/改质感只需调这里的变量
+   ============================================================ */
+
 :root {
+  color-scheme: dark;
+
+  /* —— 表面层次：背景 < 面板 < 悬浮态，逐级提亮制造深度 —— */
+  --bg: #0f1311;
+  --surface: #171c1a;
+  --surface-raised: #1c2320;
+  --surface-hover: #232b27;
+
+  /* —— 描边：极低对比 + 顶部内高光（模拟玻璃边缘的光）—— */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --edge-light: rgba(255, 255, 255, 0.05);
+
+  /* —— 文字层级 —— */
+  --text: #e8ede9;
+  --text-muted: #98a39c;
+  --text-subtle: #6c766f;
+
+  /* —— 强调色：翡翠绿（深色下提亮 + 发光）—— */
+  --accent: #1fc99e;
+  --accent-strong: #15b389;
+  --accent-press: #119a76;
+  --accent-soft: rgba(31, 201, 158, 0.13);
+  --accent-border: rgba(31, 201, 158, 0.42);
+  --on-accent: #04130e;
+
+  /* —— 语义色 —— */
+  --ok: #36d399;
+  --danger: #f9776c;
+
+  /* —— 圆角 —— */
+  --r-sm: 8px;
+  --r-md: 11px;
+  --r-lg: 14px;
+
+  /* —— 投影：低透明度 + 大扩散，深色下要"软" —— */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 18px 44px -14px rgba(0, 0, 0, 0.65);
+
+  /* ════════════════════════════════════════════════════════
+     ▼ 签名发光强度 —— 这里的取值决定整个 App 的"气场"
+       这是一个纯品味决策，留给你定夺（见对话说明）。
+       当前为克制的默认值，可直接微调下面两行。
+     ════════════════════════════════════════════════════════ */
+  --glow-accent: 0 0 0 1px var(--accent-border),
+    0 8px 24px -10px rgba(31, 201, 158, 0.45);
+  --glow-ambient: rgba(31, 201, 158, 0.07);
+  /* ════════════════════════════════════════════════════════ */
+
+  /* —— 动效 —— */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 180ms;
+
   font-family:
-    Inter, "SF Pro Display", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  color: #17211d;
-  background: #f3f5f1;
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", "Microsoft YaHei", Inter, system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 * {
@@ -16,65 +77,161 @@ body {
   margin: 0;
   min-width: 900px;
   min-height: 100vh;
-  background: #f3f5f1;
+  color: var(--text);
+  /* 顶部柔和环境光晕 —— 平面背景的"科技感"来源 */
+  background:
+    radial-gradient(
+      1200px 520px at 50% -8%,
+      var(--glow-ambient),
+      transparent 70%
+    ),
+    var(--bg);
 }
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* —— 自定义滚动条：深色下细、低调、悬浮才显眼 —— */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
+
+/* ============================================================
+   按钮
+   ============================================================ */
 
 button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 38px;
-  border: 1px solid #cbd4cd;
-  border-radius: 8px;
-  padding: 0 14px;
-  color: #17211d;
-  background: #ffffff;
+  min-height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 0 16px;
+  color: var(--text);
+  background: var(--surface-raised);
   font: inherit;
   font-size: 14px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
   cursor: pointer;
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 button:hover:not(:disabled) {
-  border-color: #87978e;
-  background: #f8faf7;
+  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
 }
 
 button:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(0);
+  background: var(--surface-raised);
 }
 
 button:disabled {
   cursor: not-allowed;
-  color: #98a39d;
-  background: #edf0ed;
+  color: var(--text-subtle);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--border);
 }
+
+button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--accent-border);
+}
+
+.ghost-button {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.primary-button {
+  color: var(--on-accent);
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border-color: transparent;
+  font-weight: 650;
+  box-shadow: var(--glow-accent);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border-color: transparent;
+  color: var(--on-accent);
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+}
+
+.primary-button:active:not(:disabled) {
+  filter: brightness(0.96);
+  transform: translateY(0);
+}
+
+.primary-button:disabled {
+  background: rgba(31, 201, 158, 0.16);
+  color: rgba(255, 255, 255, 0.4);
+  box-shadow: none;
+}
+
+/* ============================================================
+   骨架布局
+   ============================================================ */
 
 .app-shell {
   display: grid;
   grid-template-rows: auto auto auto minmax(320px, 1fr) 190px;
-  gap: 14px;
+  gap: 16px;
   min-height: 100vh;
-  padding: 22px;
+  padding: 26px 28px;
 }
 
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 2px 2px 6px;
 }
 
 .eyebrow {
-  margin: 0 0 4px;
-  color: #69746d;
-  font-size: 13px;
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -86,26 +243,33 @@ p {
 
 h1 {
   font-size: 30px;
-  line-height: 1.15;
-  letter-spacing: 0;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: var(--text);
 }
 
 h2 {
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 650;
   line-height: 1.3;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
-.ghost-button {
-  background: transparent;
-}
+/* ============================================================
+   状态条
+   ============================================================ */
 
 .status-strip {
   display: grid;
   grid-template-columns: 1.1fr 0.7fr 0.7fr 2fr;
-  border: 1px solid #d8ded9;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 var(--edge-light);
   overflow: hidden;
 }
 
@@ -114,9 +278,9 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 54px;
-  padding: 0 16px;
-  border-right: 1px solid #e2e7e3;
+  min-height: 58px;
+  padding: 0 20px;
+  border-right: 1px solid var(--border);
 }
 
 .status-strip > div:last-child {
@@ -124,16 +288,24 @@ h2 {
 }
 
 .status-strip span {
-  color: #6a756e;
-  font-size: 13px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .status-strip strong {
-  color: #17211d;
-  font-size: 15px;
+  color: var(--text);
+  font-size: 17px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
 }
+
+/* ============================================================
+   工具栏
+   ============================================================ */
 
 .toolbar {
   display: flex;
@@ -141,21 +313,18 @@ h2 {
   gap: 10px;
 }
 
-.primary-button {
-  border-color: #116b5f;
-  color: #ffffff;
-  background: #116b5f;
+.toolbar .primary-button {
+  margin-left: auto;
 }
 
-.primary-button:hover:not(:disabled) {
-  border-color: #0d594f;
-  background: #0d594f;
-}
+/* ============================================================
+   工作区面板
+   ============================================================ */
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
   min-height: 0;
 }
 
@@ -163,9 +332,12 @@ h2 {
 .side-pane,
 .log-pane {
   min-width: 0;
-  border: 1px solid #d8ded9;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 var(--edge-light);
 }
 
 .file-pane,
@@ -180,19 +352,23 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 50px;
-  padding: 0 16px;
-  border-bottom: 1px solid #e2e7e3;
+  min-height: 52px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
 }
 
 .pane-header span {
   min-width: 0;
-  color: #6a756e;
-  font-size: 13px;
+  color: var(--text-subtle);
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ============================================================
+   表格
+   ============================================================ */
 
 .table-wrap {
   min-height: 0;
@@ -207,9 +383,9 @@ table {
 
 th,
 td {
-  height: 42px;
-  padding: 0 14px;
-  border-bottom: 1px solid #edf0ed;
+  height: 44px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
 }
@@ -218,14 +394,24 @@ th {
   position: sticky;
   top: 0;
   z-index: 1;
-  color: #6a756e;
-  background: #f7f9f6;
-  font-size: 12px;
+  color: var(--text-subtle);
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+tbody tr {
+  transition: background var(--dur) var(--ease);
+}
+
+tbody tr:hover {
+  background: var(--surface-hover);
 }
 
 td {
-  color: #17211d;
+  color: var(--text);
   font-size: 14px;
 }
 
@@ -236,12 +422,13 @@ td:nth-child(1) {
 
 th:nth-child(3),
 td:nth-child(3) {
-  width: 72px;
+  width: 76px;
   text-align: center;
 }
 
 .path-cell {
-  color: #6a756e;
+  color: var(--text-muted);
+  font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -249,31 +436,60 @@ td:nth-child(3) {
 
 .empty-row,
 .empty-text {
-  color: #7a857e;
+  color: var(--text-subtle);
   text-align: center;
+  font-size: 13px;
 }
 
+.empty-row {
+  height: 120px;
+}
+
+/* ============================================================
+   小按钮 / 文字按钮
+   ============================================================ */
+
 .icon-button {
-  width: 32px;
-  min-height: 32px;
+  width: 34px;
+  min-height: 34px;
   padding: 0;
-  border: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
   background: transparent;
+}
+
+.icon-button:hover:not(:disabled) {
+  color: var(--danger);
+  background: rgba(249, 119, 108, 0.12);
+  border-color: transparent;
+  transform: none;
 }
 
 .text-button {
-  min-height: 30px;
+  min-height: 32px;
   border: 0;
-  padding: 0;
-  color: #116b5f;
+  padding: 0 4px;
+  color: var(--accent);
   background: transparent;
-  font-weight: 700;
+  font-weight: 650;
 }
 
 .text-button:hover:not(:disabled) {
   background: transparent;
-  color: #0d594f;
+  color: var(--accent);
+  filter: brightness(1.15);
+  transform: none;
 }
+
+.text-button:disabled {
+  background: transparent;
+  color: var(--text-subtle);
+}
+
+/* ============================================================
+   结果列表
+   ============================================================ */
 
 .result-list {
   display: flex;
@@ -284,10 +500,15 @@ td:nth-child(3) {
 
 .result-item {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 10px;
-  padding: 13px 16px;
-  border-bottom: 1px solid #edf0ed;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border);
+  transition: background var(--dur) var(--ease);
+}
+
+.result-item:hover {
+  background: var(--surface-hover);
 }
 
 .result-item strong,
@@ -301,13 +522,19 @@ td:nth-child(3) {
 
 .result-item strong {
   font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .result-item span {
   margin-top: 4px;
-  color: #6a756e;
+  color: var(--text-muted);
   font-size: 13px;
 }
+
+/* ============================================================
+   日志区
+   ============================================================ */
 
 .log-pane {
   display: grid;
@@ -317,31 +544,35 @@ td:nth-child(3) {
 
 pre {
   margin: 0;
-  padding: 14px 16px;
-  color: #27312c;
+  padding: 16px 20px;
+  color: var(--text-muted);
   font-family:
-    "SFMono-Regular", Consolas, "Liberation Mono", "Microsoft YaHei Mono",
-    monospace;
+    "SF Mono", "SFMono-Regular", ui-monospace, Consolas,
+    "Liberation Mono", "Microsoft YaHei Mono", monospace;
   font-size: 12px;
-  line-height: 1.55;
+  line-height: 1.65;
   overflow: auto;
   white-space: pre-wrap;
 }
 
+/* ============================================================
+   语义色 / 动效
+   ============================================================ */
+
 .ok {
-  color: #087443 !important;
+  color: var(--ok) !important;
 }
 
 .danger {
-  color: #b42318 !important;
+  color: var(--danger) !important;
 }
 
 .muted {
-  color: #6a756e !important;
+  color: var(--text-muted) !important;
 }
 
 .spin {
-  animation: spin 900ms linear infinite;
+  animation: spin 850ms linear infinite;
 }
 
 @keyframes spin {
@@ -349,6 +580,10 @@ pre {
     transform: rotate(360deg);
   }
 }
+
+/* ============================================================
+   响应式
+   ============================================================ */
 
 @media (max-width: 980px) {
   body {
@@ -361,5 +596,19 @@ pre {
 
   .side-pane {
     min-height: 220px;
+  }
+}
+
+/* ============================================================
+   无障碍：尊重"减少动态效果"系统偏好
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
