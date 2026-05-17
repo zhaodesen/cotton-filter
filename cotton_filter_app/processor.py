@@ -7,13 +7,9 @@ from typing import Callable
 
 import pandas as pd
 
-from .constants import (
-    MAX_SCORE_GAP,
-    OUTPUT_COLUMNS,
-    REQUIRED_COLUMNS,
-)
 from .header import build_column_map, find_header_row, normalize_text
 from .models import ColumnMap, Record
+from .rules import RuleSet, load_ruleset, matches_range
 from .scoring import parse_float, score_record
 
 ProgressLogger = Callable[[str], None]
@@ -26,39 +22,24 @@ def is_empty_cell(value: object) -> bool:
     return value is None or pd.isna(value) or str(value).strip() == ""
 
 
-def is_color_grade_label(value: object) -> bool:
+def is_color_grade_label(value: object, rule_set: RuleSet | None = None) -> bool:
     """判断组合表头中的子列是否是颜色级标签。"""
 
+    active_rule_set = rule_set or load_ruleset()
+    if active_rule_set.is_value_alias("颜色级", value):
+        return True
+
     text = normalize_text(value)
-    if not text or text in {"无", "-", "--"}:
+    if not text or text in {"无", "--"}:
         return False
-
-    if any(keyword in text for keyword in ("白棉", "污棉", "染棉")):
-        return "级" in text
-
-    return text in {
-        "11",
-        "12",
-        "13",
-        "21",
-        "22",
-        "23",
-        "31",
-        "32",
-        "33",
-        "41",
-        "42",
-        "43",
-        "51",
-        "52",
-        "53",
-    }
+    return False
 
 
 def detect_color_columns(
     raw_frame: pd.DataFrame,
     header_row: int,
     column_map: ColumnMap,
+    rule_set: RuleSet | None = None,
 ) -> ColorColumns:
     """识别类似“颜色级比例(%)”下分多列的组合表头。"""
 
@@ -79,7 +60,7 @@ def detect_color_columns(
     color_columns: ColorColumns = []
     for column_index in range(start_column, end_column):
         label = subheader_cells[column_index]
-        if is_color_grade_label(label):
+        if is_color_grade_label(label, rule_set=rule_set):
             color_columns.append((column_index, str(label).replace("\n", "")))
 
     return color_columns
@@ -103,9 +84,11 @@ def build_record(
     row: pd.Series,
     column_map: ColumnMap,
     color_columns: ColorColumns | None = None,
+    rule_set: RuleSet | None = None,
 ) -> Record | None:
     """从一行 Excel 数据中构建统一字段记录。"""
 
+    active_rule_set = rule_set or load_ruleset()
     basis = parse_float(row.iloc[column_map["基差"]], default=float("nan"))
     if pd.isna(basis):
         return None
@@ -120,21 +103,32 @@ def build_record(
             record["颜色级"] = color_summary
 
     record["_基差"] = basis
-    record["_得分"] = score_record(record)
+    record["_得分"] = score_record(record, rule_set=active_rule_set)
     record["_与基差差距"] = basis - record["_得分"]
 
     return record
 
 
-def format_output_frame(records: list[Record]) -> pd.DataFrame:
+def format_output_frame(
+    records: list[Record],
+    rule_set: RuleSet | None = None,
+) -> pd.DataFrame:
     """筛选并整理最终输出 DataFrame。"""
 
+    active_rule_set = rule_set or load_ruleset()
     frame = pd.DataFrame(records)
-    kept = frame[frame["_与基差差距"].abs() <= MAX_SCORE_GAP].copy()
+    filter_rules = active_rule_set.filter_rules()
+    if filter_rules:
+        mask = pd.Series(False, index=frame.index)
+        for rule in filter_rules:
+            mask = mask | frame["_与基差差距"].map(lambda value: matches_range(value, rule))
+        kept = frame[mask].copy()
+    else:
+        kept = frame.copy()
 
     kept = kept.rename(columns={"_得分": "得分", "_与基差差距": "与基差差距"})
     available_columns = [
-        column for column in OUTPUT_COLUMNS if column in kept.columns
+        column for column in active_rule_set.output_fields if column in kept.columns
     ]
     return kept[available_columns]
 
@@ -146,8 +140,9 @@ def process_sheet(
 ) -> pd.DataFrame | None:
     """处理单个 sheet；非数据表或无保留行时返回 None。"""
 
+    rule_set = load_ruleset()
     log_prefix = f"[{sheet_name}] " if sheet_name else ""
-    header_row = find_header_row(raw_frame)
+    header_row = find_header_row(raw_frame, rule_set=rule_set)
     if header_row < 0:
         if log:
             log(f"{log_prefix}未识别到表头，跳过")
@@ -156,9 +151,12 @@ def process_sheet(
     if log:
         log(f"{log_prefix}识别到表头行: 第 {header_row + 1} 行")
 
-    column_map = build_column_map(raw_frame.iloc[header_row].tolist())
+    column_map = build_column_map(
+        raw_frame.iloc[header_row].tolist(),
+        rule_set=rule_set,
+    )
     missing_columns = [
-        column_name for column_name in REQUIRED_COLUMNS if column_name not in column_map
+        column_name for column_name in rule_set.required_fields if column_name not in column_map
     ]
     if missing_columns:
         if log:
@@ -166,11 +164,11 @@ def process_sheet(
         return None
 
     body = raw_frame.iloc[header_row + 1 :].reset_index(drop=True)
-    color_columns = detect_color_columns(raw_frame, header_row, column_map)
+    color_columns = detect_color_columns(raw_frame, header_row, column_map, rule_set)
     records = [
         record
         for _, row in body.iterrows()
-        if (record := build_record(row, column_map, color_columns)) is not None
+        if (record := build_record(row, column_map, color_columns, rule_set)) is not None
     ]
 
     if log:
@@ -181,7 +179,7 @@ def process_sheet(
             log(f"{log_prefix}没有可评分数据，跳过")
         return None
 
-    output_frame = format_output_frame(records)
+    output_frame = format_output_frame(records, rule_set=rule_set)
     if log:
         log(f"{log_prefix}命中筛选条件 {len(output_frame)} 行")
     return output_frame if len(output_frame) else None

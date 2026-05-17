@@ -9,34 +9,12 @@ from typing import Any
 import pandas as pd
 
 from .models import Record
+from .rules import RuleSet, load_ruleset, matches_range
 
 
 NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 PERCENT_RE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[%％]")
 COLOR_RATIO_RE = re.compile(r"[:：]\s*([-+]?\d+(?:\.\d+)?)\s*(?:[%％])?")
-COLOR_GRADE_RE = re.compile(
-    r"(?:白棉|淡点污棉|淡黄染棉|黄染棉)?[一二三四五12345]级"
-)
-COLOR_GRADE_CODE_RE = re.compile(
-    r"(?<!\d)(?:11|21|31|41|51|12|22|32|42|52|13|23|33|43|53)(?!\d)"
-)
-KNOWN_COLOR_GRADE_CODES = {
-    11,
-    12,
-    13,
-    21,
-    22,
-    23,
-    31,
-    32,
-    33,
-    41,
-    42,
-    43,
-    51,
-    52,
-    53,
-}
 
 
 def parse_float(value: Any, default: float = 0.0) -> float:
@@ -59,17 +37,23 @@ def parse_float(value: Any, default: float = 0.0) -> float:
         return float(match.group()) if match else default
 
 
-def extract_max_color_percent(value: Any) -> float:
+def extract_max_color_percent(
+    value: Any,
+    rule_set: RuleSet | None = None,
+) -> float:
     """从颜色级文本中提取最大的百分比。"""
+
+    active_rule_set = rule_set or load_ruleset()
 
     if value is None or pd.isna(value):
         return 0.0
 
     if isinstance(value, (int, float)):
         numeric_value = float(value)
-        if numeric_value.is_integer() and int(numeric_value) in KNOWN_COLOR_GRADE_CODES:
-            return 100.0
-        if numeric_value.is_integer() and 1 <= int(numeric_value) <= 5:
+        if numeric_value.is_integer() and active_rule_set.is_value_alias(
+            "颜色级",
+            str(int(numeric_value)),
+        ):
             return 100.0
         return numeric_value if 0 <= numeric_value <= 100 else 0.0
 
@@ -84,39 +68,24 @@ def extract_max_color_percent(value: Any) -> float:
     if values:
         return max(values)
 
-    if COLOR_GRADE_RE.search(text) or COLOR_GRADE_CODE_RE.search(text):
+    if active_rule_set.is_value_alias("颜色级", text):
         return 100.0
 
     return 0.0
 
 
-def score_record(record: Record) -> int:
+def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
     """按当前业务规则计算单条棉花资源得分。"""
 
+    active_rule_set = rule_set or load_ruleset()
     score = 0
 
-    if extract_max_color_percent(record.get("颜色级")) >= 80:
-        score += 100
-
-    length = parse_float(record.get("长度"))
-    if length > 30:
-        score += 400
-    elif 29 <= length <= 30:
-        score += 150
-
-    micronaire = parse_float(record.get("马值"))
-    if micronaire and micronaire < 4.2:
-        score += 100
-    elif micronaire > 5:
-        score -= 100
-
-    if parse_float(record.get("整齐度")) > 83:
-        score += 200
-
-    strength = parse_float(record.get("强力"))
-    if strength > 31:
-        score += 250
-    elif 29 <= strength <= 31:
-        score += 150
+    for rule in active_rule_set.score_rules():
+        if rule.field_name == "颜色级":
+            value = extract_max_color_percent(record.get(rule.field_name), active_rule_set)
+        else:
+            value = parse_float(record.get(rule.field_name))
+        if matches_range(value, rule):
+            score += rule.score_delta or 0
 
     return score

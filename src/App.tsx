@@ -1,6 +1,8 @@
 import {
   CheckCircle2,
+  Database,
   FilePlus2,
+  FileSpreadsheet,
   FolderOpen,
   FolderPlus,
   Loader2,
@@ -23,6 +25,7 @@ import {
   getDefaultOutputDir,
 } from "./api";
 import { BackendService, startBackend } from "./backend";
+import RulesView from "./RulesView";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
@@ -46,6 +49,7 @@ function formatError(error: unknown): string {
 
 export default function App() {
   const [apiBase, setApiBase] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"filter" | "rules">("filter");
   const [files, setFiles] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>(["正在启动 Python 后端"]);
@@ -213,16 +217,36 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={activeView === "rules" ? "app-shell rules-mode" : "app-shell"}>
       <section className="topbar">
         <div>
           <p className="eyebrow">cotton-filter</p>
           <h1>Excel 棉花资源筛选</h1>
         </div>
-        <button className="ghost-button" type="button" onClick={checkForUpdates}>
-          <RefreshCw size={17} />
-          检查更新
-        </button>
+        <div className="topbar-actions">
+          <nav className="view-tabs" aria-label="菜单">
+            <button
+              className={activeView === "filter" ? "active" : ""}
+              type="button"
+              onClick={() => setActiveView("filter")}
+            >
+              <FileSpreadsheet size={17} />
+              文件筛选
+            </button>
+            <button
+              className={activeView === "rules" ? "active" : ""}
+              type="button"
+              onClick={() => setActiveView("rules")}
+            >
+              <Database size={17} />
+              规则维护
+            </button>
+          </nav>
+          <button className="ghost-button" type="button" onClick={checkForUpdates}>
+            <RefreshCw size={17} />
+            检查更新
+          </button>
+        </div>
       </section>
 
       <section className="status-strip">
@@ -246,127 +270,142 @@ export default function App() {
         </div>
       </section>
 
-      <section className="toolbar" aria-label="操作">
-        <button type="button" onClick={selectFiles} disabled={!backendReady}>
-          <FilePlus2 size={18} />
-          添加 Excel
-        </button>
-        <button type="button" onClick={selectFolders} disabled={!backendReady}>
-          <FolderPlus size={18} />
-          添加文件夹
-        </button>
-        <button type="button" onClick={selectOutputDir} disabled={!backendReady}>
-          <FolderOpen size={18} />
-          保存目录
-        </button>
-        <button
-          className="primary-button"
-          type="button"
-          onClick={runFilter}
-          disabled={!backendReady || isProcessing || files.length === 0}
-        >
-          {isProcessing ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-          开始筛选
-        </button>
-        <button type="button" onClick={clearAll} disabled={isProcessing}>
-          <RotateCcw size={18} />
-          清空
-        </button>
-      </section>
+      {activeView === "filter" ? (
+        <>
+          <section className="toolbar" aria-label="操作">
+            <button type="button" onClick={selectFiles} disabled={!backendReady}>
+              <FilePlus2 size={18} />
+              添加 Excel
+            </button>
+            <button type="button" onClick={selectFolders} disabled={!backendReady}>
+              <FolderPlus size={18} />
+              添加文件夹
+            </button>
+            <button type="button" onClick={selectOutputDir} disabled={!backendReady}>
+              <FolderOpen size={18} />
+              保存目录
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={runFilter}
+              disabled={!backendReady || isProcessing || files.length === 0}
+            >
+              {isProcessing ? (
+                <Loader2 className="spin" size={18} />
+              ) : (
+                <Play size={18} />
+              )}
+              开始筛选
+            </button>
+            <button type="button" onClick={clearAll} disabled={isProcessing}>
+              <RotateCcw size={18} />
+              清空
+            </button>
+          </section>
 
-      <section className="workspace">
-        <div className="file-pane">
-          <div className="pane-header">
-            <h2>待处理文件</h2>
-            <span>{outputDir || "未选择保存目录"}</span>
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>文件名</th>
-                  <th>位置</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {files.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="empty-row">
-                      请选择 .xlsx 或 .xls 文件
-                    </td>
-                  </tr>
-                ) : (
-                  files.map((file) => (
-                    <tr key={file}>
-                      <td>{fileName(file)}</td>
-                      <td className="path-cell">{dirName(file)}</td>
-                      <td>
-                        <button
-                          className="icon-button"
-                          type="button"
-                          aria-label="移除文件"
-                          title="移除文件"
-                          onClick={() => removeFile(file)}
-                          disabled={isProcessing}
-                        >
-                          <XCircle size={17} />
-                        </button>
-                      </td>
+          <section className="workspace">
+            <div className="file-pane">
+              <div className="pane-header">
+                <h2>待处理文件</h2>
+                <span>{outputDir || "未选择保存目录"}</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>文件名</th>
+                      <th>位置</th>
+                      <th>操作</th>
                     </tr>
+                  </thead>
+                  <tbody>
+                    {files.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="empty-row">
+                          请选择 .xlsx 或 .xls 文件
+                        </td>
+                      </tr>
+                    ) : (
+                      files.map((file) => (
+                        <tr key={file}>
+                          <td>{fileName(file)}</td>
+                          <td className="path-cell">{dirName(file)}</td>
+                          <td>
+                            <button
+                              className="icon-button"
+                              type="button"
+                              aria-label="移除文件"
+                              title="移除文件"
+                              onClick={() => removeFile(file)}
+                              disabled={isProcessing}
+                            >
+                              <XCircle size={17} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <aside className="side-pane">
+              <div className="pane-header">
+                <h2>筛选结果</h2>
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={openResultDir}
+                  disabled={!outputDir}
+                >
+                  打开目录
+                </button>
+              </div>
+              <div className="result-list">
+                {results.length === 0 ? (
+                  <p className="empty-text">暂无结果</p>
+                ) : (
+                  results.map((result) => (
+                    <div className="result-item" key={result.src}>
+                      {result.error ? (
+                        <XCircle className="danger" size={18} />
+                      ) : (
+                        <CheckCircle2 className="ok" size={18} />
+                      )}
+                      <div>
+                        <strong>{fileName(result.src)}</strong>
+                        <span>
+                          {result.error
+                            ? result.error
+                            : `保留 ${result.kept} 行${
+                                result.out ? ` -> ${fileName(result.out)}` : ""
+                              }`}
+                        </span>
+                      </div>
+                    </div>
                   ))
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </div>
+            </aside>
+          </section>
 
-        <aside className="side-pane">
-          <div className="pane-header">
-            <h2>筛选结果</h2>
-            <button
-              className="text-button"
-              type="button"
-              onClick={openResultDir}
-              disabled={!outputDir}
-            >
-              打开目录
-            </button>
-          </div>
-          <div className="result-list">
-            {results.length === 0 ? (
-              <p className="empty-text">暂无结果</p>
-            ) : (
-              results.map((result) => (
-                <div className="result-item" key={result.src}>
-                  {result.error ? (
-                    <XCircle className="danger" size={18} />
-                  ) : (
-                    <CheckCircle2 className="ok" size={18} />
-                  )}
-                  <div>
-                    <strong>{fileName(result.src)}</strong>
-                    <span>
-                      {result.error
-                        ? result.error
-                        : `保留 ${result.kept} 行${result.out ? ` -> ${fileName(result.out)}` : ""}`}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </aside>
-      </section>
-
-      <section className="log-pane" aria-label="处理日志">
-        <div className="pane-header">
-          <h2>处理日志</h2>
-          <span>{logs.length} 条</span>
-        </div>
-        <pre>{logs.join("\n")}</pre>
-      </section>
+          <section className="log-pane" aria-label="处理日志">
+            <div className="pane-header">
+              <h2>处理日志</h2>
+              <span>{logs.length} 条</span>
+            </div>
+            <pre>{logs.join("\n")}</pre>
+          </section>
+        </>
+      ) : (
+        <RulesView
+          baseUrl={apiBase}
+          backendReady={backendReady}
+          onLog={appendLog}
+        />
+      )}
     </main>
   );
 }
-

@@ -61,7 +61,7 @@ Excel 表里常见字段包括：
 - 仓储：`仓储地`、`仓库`、`库费承担`
 - 状态：是否已售、是否点价、是否出库、是否结算
 
-新增模板支持时，优先扩展 `cotton_filter_app/constants.py` 里的 `COLUMN_ALIASES`，不要写死某一家公司的列名。
+新增模板支持时，优先通过前端“规则维护”菜单或本地 SQLite 规则库维护列名规则，不要再把某一家公司的列名写死到 Python 常量里。
 
 ## 升贴水规则背景
 
@@ -86,19 +86,22 @@ Excel 表里常见字段包括：
 - 扎工质量：`P1 +100`，`P2 0`，`P3 -300`
 - 异性纤维：超过 1 包后，每多 1 包贴水 `200 元/吨`
 
-当前代码里的 `score_record()` 是一套简化评分逻辑，不等同于完整交易所/收购规则。若要改规则，优先让用户确认客户实际 Excel 规则和验收样例。
+当前代码里的动态数据规则是一套简化评分逻辑，不等同于完整交易所/收购规则。若要改规则，优先让用户确认客户实际 Excel 规则和验收样例，再通过规则库维护。
 
 ## 当前实现约束
 
 主要文件：
 
 - `backend/server.py`：Python FastAPI 本地后端入口，作为 Tauri sidecar 启动。
-- `cotton_filter_app/constants.py`：共享常量、字段别名和筛选阈值。
+- `cotton_filter_app/constants.py`：共享应用常量。
+- `cotton_filter_app/rules.py`：本地 SQLite 规则库、默认规则初始化、列名规则和数据规则 CRUD。
+- `cotton_filter_app/text_utils.py`：表头/规则文本标准化。
 - `cotton_filter_app/header.py`：Excel 表头识别和字段映射。
 - `cotton_filter_app/scoring.py`：棉花资源评分规则。
 - `cotton_filter_app/processor.py`：sheet/workbook 处理和输出表生成。
 - `cotton_filter_app/file_utils.py`：批量文件、输出路径和文件展开工具。
-- `src/App.tsx`：Tauri Web 前端主界面。
+- `src/App.tsx`：Tauri Web 前端主界面和顶部菜单。
+- `src/RulesView.tsx`：列名规则、数据规则维护页面。
 - `src/backend.ts`：通过 Tauri shell plugin 启动/停止 Python sidecar。
 - `src/api.ts`：前端调用本地 FastAPI 的接口封装。
 - `src-tauri/tauri.conf.json`：Tauri v2 应用、sidecar、bundle 和 updater 配置。
@@ -111,19 +114,23 @@ Excel 表里常见字段包括：
 
 - 支持 `.xlsx` 和 `.xls`。
 - 自动扫描前置抬头，定位真实表头行。
-- 通过字段别名对齐多家公司模板。
+- 通过本地 SQLite 的列名规则对齐多家公司模板；表头标准化后精确匹配，匹配成功即映射为统一字段。
 - 支持两行组合表头；例如 `颜色级比例(%)` 下分 `白棉2级`、`白棉3级` 等多列时，会合并成统一颜色级占比文本再评分。
-- 颜色级占比支持 `95%`、`95％`、`31:84.4` 等写法；单独写 `白棉3级` 或 `31` 时按直接品级处理为 `100%`。
+- 颜色级占比支持 `95%`、`95％`、`31:84.4` 等写法；单独写 `白棉3级` 或 `31` 时按数据规则里的颜色级值别名处理为 `100%`。
 - 数值字段支持从 `30.5mm`、`4.1(A)`、`打包-1500` 等文本中提取数字。
 - 必需字段是 `基差`、`长度`、`马值`。
-- 对每行计算 `得分`，再计算 `与基差差距 = 基差 - 得分`。
-- 当前保留条件：`abs(与基差差距) <= 100`。
+- 对每行按 SQLite 数据规则计算 `得分`，再计算 `与基差差距 = 基差 - 得分`。
+- 当前默认保留条件来自数据规则：`与基差差距 -100 到 100 保留`。
 - 输出到 `cotton-filter-results`，文件名使用原文件名；重名时追加 `_2`、`_3` 等编号。
 - GUI 处理日志保持精简：只展示开始筛选、每个文件成功/失败、筛出行数和最终汇总。
 - GUI 采用 Tauri + React + TypeScript 实现，Tauri 负责窗口、安装包、自动更新、文件选择、打开目录、启动/停止后端；Python 只负责 Excel 解析、字段匹配、评分、筛选、写出结果。
+- GUI 顶部菜单包含“文件筛选”和“规则维护”；规则维护页只保留“列名规则”和“数据规则”两个主体区域。
+- 列名规则页面按标准字段分组展示，标准字段不可编辑；用户只能给某个标准字段新增别名或删除已有别名，新增别名必须通过弹框录入。
+- 列名规则不在页面暴露启用/停用状态。
 - 前端保持克制的桌面工具样式：浅色工作台、表格式文件列表、浅色日志区和少量墨绿色状态强调；不要恢复 Tkinter。
 - Tauri 通过 `@tauri-apps/plugin-dialog` 选择文件/目录，通过 `@tauri-apps/plugin-opener` 打开结果目录，通过 `@tauri-apps/plugin-shell` 启动 `binaries/cotton-filter-backend` sidecar。
 - Python 本地服务只绑定 `127.0.0.1`，前端启动时随机选择 `18763` 起的一段本地端口并等待 `/health`。
+- Python 后端首次启动会在本机用户数据目录创建 `rules.sqlite3`，也可通过 `COTTON_FILTER_RULE_DB` 指定规则库路径；默认规则从旧版硬编码列名、颜色级值别名、评分区间和过滤区间迁移而来。
 - Tauri updater 已接入官方 updater plugin；发布自动更新必须使用 `TAURI_SIGNING_PRIVATE_KEY` 对安装包签名，公钥写在 `src-tauri/tauri.conf.json`。本机私钥当前位于 `/Users/zhaodesen/.tauri/cotton-filter.key`，不要提交到仓库。
 - CI 构建入口是 Tauri，不要再引用已删除的 `main.py`、`cotton_filter.py`、`.github/scripts/build_windows.py` 或 Inno Setup 配置。
 - CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.ref_name` 版本号，避免在 workflow 里写复杂跨平台内联 Python。
@@ -140,8 +147,8 @@ Excel 表里常见字段包括：
 
 优先级从高到低：
 
-1. 扩展字段别名，适配更多客户 Excel 模板。
-2. 把筛选规则做成更可配置的区间条件，如长度、强力、马值、基差、仓库、加工类型。
+1. 扩展列名规则，适配更多客户 Excel 模板。
+2. 继续丰富数据规则，如长度、强力、马值、基差、仓库、加工类型。
 3. 输出更清晰的命中原因，让客户知道每个批次为什么被保留。
 4. 增加预设规则，如高支纱、低杂优质、低基差、指定仓库。
 5. 后续再考虑数据库、Web 筛选器、客户偏好匹配和 AI 推荐。

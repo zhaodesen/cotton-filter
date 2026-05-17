@@ -179,14 +179,17 @@ backend/
   server.py                Python FastAPI 本地后端
 
 cotton_filter_app/
-  constants.py             字段别名、筛选阈值、输出列
+  constants.py             共享应用常量
+  rules.py                 SQLite 规则库和默认规则初始化
+  text_utils.py            表头/规则文本标准化
   header.py                Excel 表头识别和字段映射
-  scoring.py               棉花评分规则
+  scoring.py               基于数据规则计算棉花评分
   processor.py             sheet/workbook 处理
   file_utils.py            批量文件处理和输出路径
 
 src/
   App.tsx                  React 主界面
+  RulesView.tsx            列名规则和数据规则维护页
   api.ts                   本地 API 调用
   backend.ts               Tauri sidecar 启动/停止
   styles.css               界面样式
@@ -265,6 +268,7 @@ npm run build
 - 不要恢复旧 `main.py` GUI 入口。
 - 不要恢复 Inno Setup 旧打包链路。
 - Excel 筛选核心逻辑继续放在 `cotton_filter_app/`。
-- 新增 Excel 模板优先扩展 `cotton_filter_app/constants.py` 的 `COLUMN_ALIASES`。
+- 新增 Excel 模板优先在“规则维护”里添加列名规则，不要把客户列名写死到 Python 常量里。
+- 列名规则按标准字段分组维护，标准字段不可编辑；新增别名使用弹框录入，页面只提供新增/删除。
+- 数据识别、评分区间和过滤区间优先通过本地 SQLite 数据规则维护。
 - 保持中文日志和中文输出列名。
-
