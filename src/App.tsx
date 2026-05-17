@@ -249,27 +249,7 @@ export default function App() {
         </div>
       </section>
 
-      <section className="status-strip">
-        <div>
-          <span>后端</span>
-          <strong className={backendReady ? "ok" : "muted"}>
-            {backendReady ? "已连接" : "启动中"}
-          </strong>
-        </div>
-        <div>
-          <span>文件</span>
-          <strong>{files.length}</strong>
-        </div>
-        <div>
-          <span>命中</span>
-          <strong>{totalKept}</strong>
-        </div>
-        <div>
-          <span>更新</span>
-          <strong className="muted">{updateState}</strong>
-        </div>
-      </section>
-
+ 
       {activeView === "filter" ? (
         <>
           <section className="toolbar" aria-label="操作">

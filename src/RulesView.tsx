@@ -277,18 +277,8 @@ export default function RulesView({
             {standardFields.map((fieldName) => {
               const aliases = columnRulesByField.get(fieldName) || [];
               return (
-                <section className="field-rule-card" key={fieldName}>
-                  <div className="field-rule-header">
-                    <strong>{fieldName}</strong>
-                    <button
-                      type="button"
-                      onClick={() => openAliasDialog(fieldName)}
-                      disabled={!backendReady || isSaving}
-                    >
-                      <Plus size={16} />
-                      新增别名
-                    </button>
-                  </div>
+                <div className="field-rule-row" key={fieldName}>
+                  <strong className="field-rule-name">{fieldName}</strong>
                   <div className="alias-list">
                     {aliases.length === 0 ? (
                       <span className="alias-empty">暂无别名</span>
@@ -309,7 +299,16 @@ export default function RulesView({
                       ))
                     )}
                   </div>
-                </section>
+                  <button
+                    className="alias-add-button"
+                    type="button"
+                    title={`为 ${fieldName} 新增别名`}
+                    onClick={() => openAliasDialog(fieldName)}
+                    disabled={!backendReady || isSaving}
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
               );
             })}
           </div>

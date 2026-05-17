@@ -401,45 +401,50 @@ h2 {
 }
 
 .field-rule-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
   min-height: 0;
-  padding: 12px;
+  padding: 4px 18px;
   overflow: auto;
 }
 
-.field-rule-card {
+.field-rule-row {
   display: grid;
-  grid-template-rows: auto min-content;
-  gap: 8px;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.field-rule-header {
-  display: flex;
+  grid-template-columns: 68px minmax(0, 1fr) 30px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 14px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
 }
 
-.field-rule-header strong {
+.field-rule-row:last-child {
+  border-bottom: 0;
+}
+
+.field-rule-name {
   min-width: 0;
   color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.field-rule-header button {
+.alias-add-button {
+  width: 30px;
   min-height: 30px;
-  padding: 0 9px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.alias-add-button:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  transform: none;
 }
 
 .alias-list {
