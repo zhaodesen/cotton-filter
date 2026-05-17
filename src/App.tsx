@@ -3,9 +3,7 @@ import {
   Database,
   FilePlus2,
   FileSpreadsheet,
-  FolderOpen,
   Loader2,
-  Play,
   RefreshCw,
   RotateCcw,
   XCircle,
@@ -17,22 +15,12 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
 
-import {
-  FileResult,
-  expandTargets,
-  filterExcelFiles,
-  getDefaultOutputDir,
-} from "./api";
+import { FileResult, expandTargets, filterExcelFiles } from "./api";
 import { BackendService, startBackend } from "./backend";
 import RulesView from "./RulesView";
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
-}
-
-function dirName(path: string): string {
-  const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  return index >= 0 ? path.slice(0, index) : "";
 }
 
 function mergeUnique(current: string[], incoming: string[]): string[] {
@@ -101,6 +89,25 @@ export default function App() {
     };
   }, []);
 
+  async function runFilterFor(fileList: string[]) {
+    if (!apiBase || isProcessing || !fileList.length) {
+      return;
+    }
+    setIsProcessing(true);
+    setResults([]);
+    appendLog("开始筛选");
+    try {
+      const response = await filterExcelFiles(apiBase, fileList, outputDir);
+      setOutputDir(response.output_dir);
+      setResults(response.results);
+      setLogs((current) => [...current, ...response.logs]);
+    } catch (error) {
+      appendLog(`筛选失败: ${formatError(error)}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   async function addTargets(targets: string[]) {
     if (!apiBase || !targets.length) {
       return;
@@ -108,12 +115,8 @@ export default function App() {
     const response = await expandTargets(apiBase, targets);
     const nextFiles = mergeUnique(files, response.files);
     setFiles(nextFiles);
-    setResults([]);
     appendLog(`已加入 ${response.files.length} 个 Excel 文件`);
-    if (!outputDir && nextFiles.length) {
-      const defaultOutput = await getDefaultOutputDir(apiBase, nextFiles);
-      setOutputDir(defaultOutput.output_dir);
-    }
+    await runFilterFor(nextFiles);
   }
 
   async function selectFiles() {
@@ -128,48 +131,11 @@ export default function App() {
     }
   }
 
-  async function selectOutputDir() {
-    const selected = await open({
-      title: "选择保存目录",
-      multiple: false,
-      directory: true,
-      canCreateDirectories: true,
-    });
-    if (typeof selected === "string") {
-      setOutputDir(selected);
-      appendLog(`保存目录: ${selected}`);
-    }
-  }
-
-  function removeFile(path: string) {
-    setFiles((current) => current.filter((file) => file !== path));
-    setResults([]);
-  }
-
   function clearAll() {
     setFiles([]);
     setResults([]);
     setOutputDir(null);
     setLogs(["已清空待处理文件"]);
-  }
-
-  async function runFilter() {
-    if (!apiBase || isProcessing || !files.length) {
-      return;
-    }
-    setIsProcessing(true);
-    setResults([]);
-    appendLog("开始筛选");
-    try {
-      const response = await filterExcelFiles(apiBase, files, outputDir);
-      setOutputDir(response.output_dir);
-      setResults(response.results);
-      setLogs((current) => [...current, ...response.logs]);
-    } catch (error) {
-      appendLog(`筛选失败: ${formatError(error)}`);
-    } finally {
-      setIsProcessing(false);
-    }
   }
 
   async function openResultDir() {
@@ -231,30 +197,20 @@ export default function App() {
         </button>
       </section>
 
- 
       {activeView === "filter" ? (
         <>
           <section className="toolbar" aria-label="操作">
-            <button type="button" onClick={selectFiles} disabled={!backendReady}>
-              <FilePlus2 size={18} />
-              添加 Excel
-            </button>
-            <button type="button" onClick={selectOutputDir} disabled={!backendReady}>
-              <FolderOpen size={18} />
-              保存目录
-            </button>
             <button
-              className="primary-button"
               type="button"
-              onClick={runFilter}
-              disabled={!backendReady || isProcessing || files.length === 0}
+              onClick={selectFiles}
+              disabled={!backendReady || isProcessing}
             >
               {isProcessing ? (
                 <Loader2 className="spin" size={18} />
               ) : (
-                <Play size={18} />
+                <FilePlus2 size={18} />
               )}
-              开始筛选
+              添加 Excel
             </button>
             <button type="button" onClick={clearAll} disabled={isProcessing}>
               <RotateCcw size={18} />
@@ -263,52 +219,6 @@ export default function App() {
           </section>
 
           <section className="workspace">
-            <div className="file-pane">
-              <div className="pane-header">
-                <h2>待处理文件</h2>
-                <span>{outputDir || "未选择保存目录"}</span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>文件名</th>
-                      <th>位置</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {files.length === 0 ? (
-                      <tr>
-                        <td colSpan={3} className="empty-row">
-                          请选择 .xlsx 或 .xls 文件
-                        </td>
-                      </tr>
-                    ) : (
-                      files.map((file) => (
-                        <tr key={file}>
-                          <td>{fileName(file)}</td>
-                          <td className="path-cell">{dirName(file)}</td>
-                          <td>
-                            <button
-                              className="icon-button"
-                              type="button"
-                              aria-label="移除文件"
-                              title="移除文件"
-                              onClick={() => removeFile(file)}
-                              disabled={isProcessing}
-                            >
-                              <XCircle size={17} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
             <aside className="side-pane">
               <div className="pane-header">
                 <h2>筛选结果</h2>

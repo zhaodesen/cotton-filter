@@ -9,7 +9,6 @@ import {
   deleteColumnRule,
   deleteDataRule,
   listRules,
-  updateDataRule,
 } from "./api";
 
 interface RulesViewProps {
@@ -43,6 +42,12 @@ const DEFAULT_STANDARD_FIELDS = [
   "整齐度",
   "批号",
 ];
+
+// 列名规则中始终隐藏的字段。
+const EXCLUDED_COLUMN_FIELDS = new Set(["与基差差距"]);
+
+// 数据规则中始终隐藏的字段（基差不参与数据规则）。
+const EXCLUDED_DATA_FIELDS = new Set(["基差", "与基差差距"]);
 
 const DEFAULT_DATA_FORM: DataRuleForm = {
   field_name: "",
@@ -101,13 +106,17 @@ function formatRange(rule: DataRule): string {
   return `${left} / ${right}`;
 }
 
-function ruleSummary(rule: DataRule): string {
-  const parts = [RULE_TYPE_LABELS[rule.rule_type], formatRange(rule)];
+function ruleDetail(rule: DataRule): string {
+  const parts = [formatRange(rule)];
   if (rule.score_delta !== null && rule.score_delta !== undefined) {
     const sign = rule.score_delta > 0 ? "+" : "";
     parts.push(`${sign}${rule.score_delta}分`);
   }
   return parts.filter(Boolean).join(" · ");
+}
+
+function ruleSummary(rule: DataRule): string {
+  return `${RULE_TYPE_LABELS[rule.rule_type]} · ${ruleDetail(rule)}`;
 }
 
 export default function RulesView({
@@ -126,17 +135,23 @@ export default function RulesView({
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState("");
 
-  const standardFields = useMemo(() => {
-    const extra = [
-      ...columnRules.map((rule) => rule.field_name),
-      ...dataRules.map((rule) => rule.field_name),
-    ];
-    return Array.from(new Set([...DEFAULT_STANDARD_FIELDS, ...extra]));
-  }, [columnRules, dataRules]);
+  const columnFields = useMemo(() => {
+    const extra = columnRules.map((rule) => rule.field_name);
+    return Array.from(
+      new Set([...DEFAULT_STANDARD_FIELDS, ...extra]),
+    ).filter((field) => !EXCLUDED_COLUMN_FIELDS.has(field));
+  }, [columnRules]);
+
+  const dataFields = useMemo(() => {
+    const extra = dataRules.map((rule) => rule.field_name);
+    return Array.from(
+      new Set([...DEFAULT_STANDARD_FIELDS, ...extra]),
+    ).filter((field) => !EXCLUDED_DATA_FIELDS.has(field));
+  }, [dataRules]);
 
   const columnRulesByField = useMemo(() => {
     const groups = new Map<string, ColumnRule[]>();
-    for (const fieldName of standardFields) {
+    for (const fieldName of columnFields) {
       groups.set(fieldName, []);
     }
     for (const rule of columnRules) {
@@ -150,11 +165,11 @@ export default function RulesView({
       );
     }
     return groups;
-  }, [columnRules, standardFields]);
+  }, [columnRules, columnFields]);
 
   const dataRulesByField = useMemo(() => {
     const groups = new Map<string, DataRule[]>();
-    for (const fieldName of standardFields) {
+    for (const fieldName of dataFields) {
       groups.set(fieldName, []);
     }
     for (const rule of dataRules) {
@@ -169,7 +184,7 @@ export default function RulesView({
       );
     }
     return groups;
-  }, [dataRules, standardFields]);
+  }, [dataRules, dataFields]);
 
   async function reloadRules() {
     if (!baseUrl) {
@@ -272,17 +287,6 @@ export default function RulesView({
     }
   }
 
-  async function toggleData(rule: DataRule) {
-    if (!baseUrl) {
-      return;
-    }
-    try {
-      await updateDataRule(baseUrl, rule.id, { enabled: !rule.enabled });
-      await reloadRules();
-    } catch (error) {
-      setErrorText(formatError(error));
-    }
-  }
 
   async function removeColumn(rule: ColumnRule) {
     if (!baseUrl) {
@@ -334,7 +338,7 @@ export default function RulesView({
           </button>
           {openColumn ? (
             <div className="field-rule-list">
-              {standardFields.map((fieldName) => {
+              {columnFields.map((fieldName) => {
                 const aliases = columnRulesByField.get(fieldName) || [];
                 return (
                   <div className="field-rule-row" key={fieldName}>
@@ -390,7 +394,7 @@ export default function RulesView({
           </button>
           {openData ? (
             <div className="field-rule-list">
-              {standardFields.map((fieldName) => {
+              {dataFields.map((fieldName) => {
                 const rules = dataRulesByField.get(fieldName) || [];
                 return (
                   <div
@@ -403,28 +407,24 @@ export default function RulesView({
                         <span className="alias-empty">暂无规则</span>
                       ) : (
                         rules.map((rule) => (
-                          <div
-                            className={
-                              rule.enabled
-                                ? "rule-pill"
-                                : "rule-pill rule-pill-off"
-                            }
-                            key={rule.id}
-                          >
-                            <button
-                              className="rule-pill-body"
-                              type="button"
-                              title={rule.enabled ? "点击停用" : "点击启用"}
-                              onClick={() => toggleData(rule)}
-                            >
-                              <span className="rule-pill-name">
-                                {rule.rule_name ||
-                                  RULE_TYPE_LABELS[rule.rule_type]}
+                          <div className="rule-pill" key={rule.id}>
+                            <div className="rule-pill-body">
+                              <span className="rule-pill-top">
+                                <span className="rule-pill-tag">
+                                  {RULE_TYPE_LABELS[rule.rule_type]}
+                                </span>
+                                <span className="rule-pill-name">
+                                  {rule.rule_name ||
+                                    RULE_TYPE_LABELS[rule.rule_type]}
+                                </span>
                               </span>
-                              <span className="rule-pill-meta">
-                                {ruleSummary(rule)}
+                              <span
+                                className="rule-pill-meta"
+                                title={ruleSummary(rule)}
+                              >
+                                {ruleDetail(rule)}
                               </span>
-                            </button>
+                            </div>
                             <button
                               className="chip-delete"
                               type="button"
