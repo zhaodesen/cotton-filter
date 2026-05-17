@@ -19,19 +19,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas openpyxl xlrd pillow pystray pyinstaller pytest
+          pip install "fastapi[standard]" pandas openpyxl xlrd "uvicorn[standard]" pyinstaller pytest
+          npm ci
 
       - name: Validate
         run: |
-          python -m compileall main.py cotton_filter_app
-          python -c "import tkinter, pandas, openpyxl, xlrd, pystray, PIL"
+          python -m compileall backend cotton_filter_app
+          python -c "import fastapi, pandas, openpyxl, xlrd, uvicorn"
           python -m pytest
 
       - name: Write build metadata
@@ -40,38 +48,43 @@ jobs:
         run: |
           python -m cotton_filter_app.write_build_info
 
-      - name: Build Windows app
-        if: runner.os == 'Windows'
-        run: python .github/scripts/build_windows.py
-
-      - name: Build Windows installer
-        if: runner.os == 'Windows'
+      - name: Build Tauri app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
         run: |
-          choco install innosetup --no-progress
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion="${{ github.ref_name }}" installer/cotton-filter.iss
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run build
+          else
+            echo "TAURI_SIGNING_PRIVATE_KEY is not configured; building unsigned installers without updater artifacts."
+            npm run tauri -- build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
 
-      - name: Publish Windows release asset
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
+      - name: Write updater manifest
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run manifest:updater
+          else
+            echo "Skip updater manifest because TAURI_SIGNING_PRIVATE_KEY is not configured."
+          fi
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "cotton-filter ${{ github.ref_name }}"
-          body: "Built automatically from ${{ github.ref_name }}."
-          files: dist/installer/cotton-filter-setup.exe
-          prerelease: false
-
-      - name: Build macOS app
-        if: runner.os == 'macOS'
-        run: |
-          pyinstaller --windowed --name cotton-filter --clean main.py
-          ditto -c -k --sequesterRsrc --keepParent dist/cotton-filter.app dist/cotton-filter-macos.zip
-
-      - name: Publish macOS release asset
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: "cotton-filter ${{ github.ref_name }}"
-          body: "Built automatically from ${{ github.ref_name }}."
-          files: dist/cotton-filter-macos.zip
+          body: "Built automatically from ${{ github.ref_name }} with Tauri."
+          files: |
+            src-tauri/target/release/bundle/**/*.exe
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.app.tar.gz
+            src-tauri/target/release/bundle/**/*.sig
+            dist/updater/*.json
           prerelease: false

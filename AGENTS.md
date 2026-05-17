@@ -92,15 +92,20 @@ Excel 表里常见字段包括：
 
 主要文件：
 
-- `main.py`：GUI 启动入口。
+- `backend/server.py`：Python FastAPI 本地后端入口，作为 Tauri sidecar 启动。
 - `cotton_filter_app/constants.py`：共享常量、字段别名和筛选阈值。
 - `cotton_filter_app/header.py`：Excel 表头识别和字段映射。
 - `cotton_filter_app/scoring.py`：棉花资源评分规则。
 - `cotton_filter_app/processor.py`：sheet/workbook 处理和输出表生成。
-- `cotton_filter_app/file_utils.py`：批量文件、输出路径和打开目录工具。
-- `cotton_filter_app/gui.py`：Tkinter 图形界面。
-- `README_Windows.md`：Windows 使用说明。
-- `.github/workflows/build.yml`：GitHub Actions 构建流程，仅在推送 `v*` 版本 tag 或手动触发时运行；使用 Python 3.10，通过 `python -m compileall main.py cotton_filter_app` 校验语法，通过 `python -m pytest` 运行测试；Windows 先用 PyInstaller 从 `main.py` 打包 onedir 应用，再用 Inno Setup 生成 `cotton-filter-setup.exe`；macOS 仍用 PyInstaller 打包 app zip。
+- `cotton_filter_app/file_utils.py`：批量文件、输出路径和文件展开工具。
+- `src/App.tsx`：Tauri Web 前端主界面。
+- `src/backend.ts`：通过 Tauri shell plugin 启动/停止 Python sidecar。
+- `src/api.ts`：前端调用本地 FastAPI 的接口封装。
+- `src-tauri/tauri.conf.json`：Tauri v2 应用、sidecar、bundle 和 updater 配置。
+- `src-tauri/capabilities/default.json`：Tauri dialog/opener/shell/updater 权限。
+- `scripts/build-backend.mjs`：用 PyInstaller 构建 Python sidecar，并按 Tauri target triple 放入 `src-tauri/binaries`。
+- `scripts/write-updater-manifest.mjs`：根据 Tauri updater 产物生成 GitHub Release 使用的 `latest-{{target}}-{{arch}}.json`。
+- `.github/workflows/build.yml`：GitHub Actions 构建流程，仅在推送 `v*` 版本 tag 或手动触发时运行；安装 Node、Rust、Python 3.10，先运行 Python 测试，再构建 Python sidecar、Vite 前端和 Tauri 桌面应用；若配置了 `TAURI_SIGNING_PRIVATE_KEY`，会额外生成 updater 签名产物和 manifest。
 
 当前处理逻辑：
 
@@ -115,19 +120,17 @@ Excel 表里常见字段包括：
 - 当前保留条件：`abs(与基差差距) <= 100`。
 - 输出到 `cotton-filter-results`，文件名使用原文件名；重名时追加 `_2`、`_3` 等编号。
 - GUI 处理日志保持精简：只展示开始筛选、每个文件成功/失败、筛出行数和最终汇总。
-- GUI 采用克制的桌面工具样式：原生 ttk 按钮、浅色面板、表格式文件列表、浅色日志区和少量墨绿色状态强调，不引入额外前端依赖。
-- GUI 窗口标题和顶部应用名需要展示当前构建版本；版本来自 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION`，本地开发态显示为 `dev`。
-- CI 构建入口是 `main.py`，不要再引用已删除的旧入口 `cotton_filter.py`。
-- Windows CI 通过 `.github/scripts/build_windows.py` 调用 PyInstaller 生成 onedir 应用，并显式把 Python/VC runtime DLL 放进应用目录，避免用户机器缺运行库时出现 `Failed to load Python DLL ... python310.dll`；随后通过 `installer/cotton-filter.iss` 生成 Inno Setup 安装包。
-- Windows 版本点窗口关闭按钮时不直接退出，而是隐藏到系统托盘；托盘菜单提供“打开 cotton-filter”和“退出”。该能力依赖 `pystray` 和 `Pillow`，macOS 仍保持关闭即退出。
-- Windows 打包版本不再启动后自动检查更新；GUI 右上角提供“检查更新”按钮，点击后检查 GitHub latest release，通过 release 的 `tag_name` 和 `cotton_filter_app/build_info.py` 的 `BUILD_VERSION` 判断是否有新版本。发现新版时查找 release asset `cotton-filter-setup.exe`，下载完成后用临时 PowerShell 脚本等待当前程序退出，再静默运行安装包并重启应用；不要再走 exe 覆盖自身更新。
-- 更新下载会优先校验 GitHub release asset 的 `sha256:` digest，校验失败时不替换当前 exe。
-- GitHub latest release 接口返回 404 时需要提示“无法访问 GitHub latest release，请确认仓库和 Release 对用户公开”，避免把私有仓库或不可访问 Release 误报成“当前已是最新版本”；其他 HTTP/网络异常也需要给出明确错误原因，不要在 GUI 中显示 `None`。
+- GUI 采用 Tauri + React + TypeScript 实现，Tauri 负责窗口、安装包、自动更新、文件选择、打开目录、启动/停止后端；Python 只负责 Excel 解析、字段匹配、评分、筛选、写出结果。
+- 前端保持克制的桌面工具样式：浅色工作台、表格式文件列表、浅色日志区和少量墨绿色状态强调；不要恢复 Tkinter。
+- Tauri 通过 `@tauri-apps/plugin-dialog` 选择文件/目录，通过 `@tauri-apps/plugin-opener` 打开结果目录，通过 `@tauri-apps/plugin-shell` 启动 `binaries/cotton-filter-backend` sidecar。
+- Python 本地服务只绑定 `127.0.0.1`，前端启动时随机选择 `18763` 起的一段本地端口并等待 `/health`。
+- Tauri updater 已接入官方 updater plugin；发布自动更新必须使用 `TAURI_SIGNING_PRIVATE_KEY` 对安装包签名，公钥写在 `src-tauri/tauri.conf.json`。本机私钥当前位于 `/Users/zhaodesen/.tauri/cotton-filter.key`，不要提交到仓库。
+- CI 构建入口是 Tauri，不要再引用已删除的 `main.py`、`cotton_filter.py`、`.github/scripts/build_windows.py` 或 Inno Setup 配置。
 - CI 打包前通过 `python -m cotton_filter_app.write_build_info` 写入当前 `github.ref_name` 版本号，避免在 workflow 里写复杂跨平台内联 Python。
 
 修改时注意：
 
-- 保持 GUI 入口可用；不要再恢复命令行模式，除非用户明确要求。
+- 保持 Tauri GUI 入口可用；不要再恢复 Tkinter 或命令行模式，除非用户明确要求。
 - 保持中文日志和中文输出列名。
 - 不要破坏 Excel 导入导出和拖拽处理体验。
 - 不要让生成结果再次被输入扫描处理。

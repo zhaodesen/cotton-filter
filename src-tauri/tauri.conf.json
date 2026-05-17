@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "cotton-filter",
+  "version": "0.1.0",
+  "identifier": "com.zhaodesen.cotton-filter",
+  "build": {
+    "beforeDevCommand": "npm run dev:frontend",
+    "beforeBuildCommand": "npm run build:frontend",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "cotton-filter",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 680,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "zhaodesen",
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/cotton-filter-backend"],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyQzU0REM4NkVGMEM5RQpSV1NlRE8rRzNGUXNCY1ZQaFk5MmpyVTF1bnR3UTN1aDNITzQ2djBHTlFlK3ZHZU1wQTlEclIrego=",
+      "endpoints": [
+        "https://github.com/zhaodesen/cotton-filter/releases/latest/download/latest-{{target}}-{{arch}}.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

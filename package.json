@@ -1,0 +1,36 @@
+{
+  "name": "cotton-filter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:backend": "node scripts/build-backend.mjs",
+    "build:frontend": "npm run build:backend && tsc -b && vite build",
+    "dev:frontend": "npm run build:backend && vite --host 127.0.0.1",
+    "manifest:updater": "node scripts/write-updater-manifest.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.0",
+    "@tauri-apps/plugin-dialog": "2.7.1",
+    "@tauri-apps/plugin-opener": "2.5.4",
+    "@tauri-apps/plugin-process": "2.3.1",
+    "@tauri-apps/plugin-shell": "2.3.5",
+    "@tauri-apps/plugin-updater": "2.10.1",
+    "lucide-react": "1.16.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.1",
+    "@types/react": "19.2.6",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "typescript": "6.0.3",
+    "vite": "8.0.13"
+  }
+}
+

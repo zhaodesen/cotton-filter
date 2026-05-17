@@ -1,13 +1,14 @@
 [project]
 name = "cotton-filter"
 version = "0.1.0"
-description = "Excel cotton resource filtering GUI"
+description = "Excel cotton resource filtering desktop app"
 requires-python = ">=3.10,<3.11"
 dependencies = [
+    "fastapi[standard]",
     "openpyxl",
     "pandas",
-    "pillow",
-    "pystray",
+    "pyinstaller",
+    "uvicorn[standard]",
     "xlrd",
 ]
 
