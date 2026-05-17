@@ -36,18 +36,6 @@ class ExpandResponse(BaseModel):
     files: list[str]
 
 
-class DefaultOutputRequest(BaseModel):
-    """根据输入文件计算默认输出目录。"""
-
-    files: list[str] = Field(default_factory=list)
-
-
-class DefaultOutputResponse(BaseModel):
-    """默认输出目录。"""
-
-    output_dir: str
-
-
 class FilterRequest(BaseModel):
     """筛选请求。"""
 
@@ -232,17 +220,6 @@ def create_app() -> FastAPI:
             raise rule_error(error) from error
         return column_rule_response(rule)
 
-    @app.put("/api/rules/column/{rule_id}", response_model=ColumnRuleResponse)
-    def update_column_rule(
-        rule_id: int,
-        request: ColumnRulePayload,
-    ) -> ColumnRuleResponse:
-        try:
-            rule = rule_repository.update_column_rule(rule_id, model_payload(request))
-        except (KeyError, ValueError) as error:
-            raise rule_error(error) from error
-        return column_rule_response(rule)
-
     @app.delete("/api/rules/column/{rule_id}")
     def delete_column_rule(rule_id: int) -> dict[str, str]:
         try:
@@ -259,17 +236,6 @@ def create_app() -> FastAPI:
             raise rule_error(error) from error
         return data_rule_response(rule)
 
-    @app.put("/api/rules/data/{rule_id}", response_model=DataRuleResponse)
-    def update_data_rule(
-        rule_id: int,
-        request: DataRulePayload,
-    ) -> DataRuleResponse:
-        try:
-            rule = rule_repository.update_data_rule(rule_id, model_payload(request))
-        except (KeyError, ValueError) as error:
-            raise rule_error(error) from error
-        return data_rule_response(rule)
-
     @app.delete("/api/rules/data/{rule_id}")
     def delete_data_rule(rule_id: int) -> dict[str, str]:
         try:
@@ -278,22 +244,10 @@ def create_app() -> FastAPI:
             raise rule_error(error) from error
         return {"status": "ok"}
 
-    @app.post("/api/rules/reset", response_model=RulesResponse)
-    def reset_rules() -> RulesResponse:
-        rule_repository.reset_defaults()
-        return list_rules()
-
     @app.post("/api/expand", response_model=ExpandResponse)
     def expand(request: ExpandRequest) -> ExpandResponse:
         paths = expand_targets(request.targets)
         return ExpandResponse(files=[str(path.resolve()) for path in paths])
-
-    @app.post("/api/default-output-dir", response_model=DefaultOutputResponse)
-    def default_output(request: DefaultOutputRequest) -> DefaultOutputResponse:
-        paths = [Path(path) for path in request.files]
-        if not paths:
-            raise HTTPException(status_code=400, detail="请先选择 Excel 文件")
-        return DefaultOutputResponse(output_dir=str(default_output_dir(paths).resolve()))
 
     @app.post("/api/filter", response_model=FilterResponse)
     def filter_excel(request: FilterRequest) -> FilterResponse:

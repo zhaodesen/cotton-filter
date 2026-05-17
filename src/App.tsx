@@ -42,7 +42,6 @@ export default function App() {
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [backendReady, setBackendReady] = useState(false);
-  const [updateState, setUpdateState] = useState("未检查");
   const backendRef = useRef<BackendService | null>(null);
 
   function appendLog(message: string) {
@@ -150,11 +149,10 @@ export default function App() {
   }
 
   async function checkForUpdates() {
-    setUpdateState("检查中");
     try {
       const update = await check();
       if (!update) {
-        setUpdateState("当前已是最新版本");
+        setNotice("当前已是最新版本");
         return;
       }
 
@@ -163,15 +161,13 @@ export default function App() {
         { title: "检查更新", kind: "info" },
       );
       if (!shouldInstall) {
-        setUpdateState(`发现新版本 ${update.version}`);
         return;
       }
 
-      setUpdateState("下载并安装中");
       await update.downloadAndInstall();
       await relaunch();
     } catch (error) {
-      setUpdateState(`检查失败: ${formatError(error)}`);
+      setNotice(`检查失败: ${formatError(error)}`);
     }
   }
 

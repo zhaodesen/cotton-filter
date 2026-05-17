@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import platform
-import subprocess
 from pathlib import Path
 from typing import Callable, Iterable, Iterator, Sequence
 
@@ -72,19 +69,6 @@ def filter_files(
             files, out_dir, log=progress_callback
         )
     ]
-
-
-def open_folder(path: Path) -> None:
-    """用当前系统默认文件管理器打开目录。"""
-
-    system_name = platform.system()
-
-    if system_name == "Windows":
-        os.startfile(path)  # type: ignore[attr-defined]
-    elif system_name == "Darwin":
-        subprocess.run(["open", str(path)], check=False)
-    else:
-        subprocess.run(["xdg-open", str(path)], check=False)
 
 
 def iter_excel_files(path: Path) -> Iterable[Path]:

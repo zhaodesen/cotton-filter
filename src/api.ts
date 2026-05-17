@@ -2,10 +2,6 @@ export interface ExpandResponse {
   files: string[];
 }
 
-export interface DefaultOutputResponse {
-  output_dir: string;
-}
-
 export interface FileResult {
   src: string;
   out: string | null;
@@ -116,28 +112,6 @@ async function postJson<TResponse, TBody>(
   return response.json() as Promise<TResponse>;
 }
 
-async function putJson<TResponse, TBody>(
-  baseUrl: string,
-  path: string,
-  body: TBody,
-): Promise<TResponse> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    const detail = payload?.detail || response.statusText;
-    throw new Error(String(detail));
-  }
-
-  return response.json() as Promise<TResponse>;
-}
-
 async function deleteJson(baseUrl: string, path: string): Promise<void> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "DELETE",
@@ -155,13 +129,6 @@ export function expandTargets(
   targets: string[],
 ): Promise<ExpandResponse> {
   return postJson(baseUrl, "/api/expand", { targets });
-}
-
-export function getDefaultOutputDir(
-  baseUrl: string,
-  files: string[],
-): Promise<DefaultOutputResponse> {
-  return postJson(baseUrl, "/api/default-output-dir", { files });
 }
 
 export interface FilterProgress {
@@ -249,14 +216,6 @@ export function createColumnRule(
   return postJson(baseUrl, "/api/rules/column", payload);
 }
 
-export function updateColumnRule(
-  baseUrl: string,
-  ruleId: number,
-  payload: ColumnRulePayload,
-): Promise<ColumnRule> {
-  return putJson(baseUrl, `/api/rules/column/${ruleId}`, payload);
-}
-
 export function deleteColumnRule(
   baseUrl: string,
   ruleId: number,
@@ -271,21 +230,9 @@ export function createDataRule(
   return postJson(baseUrl, "/api/rules/data", payload);
 }
 
-export function updateDataRule(
-  baseUrl: string,
-  ruleId: number,
-  payload: DataRulePayload,
-): Promise<DataRule> {
-  return putJson(baseUrl, `/api/rules/data/${ruleId}`, payload);
-}
-
 export function deleteDataRule(
   baseUrl: string,
   ruleId: number,
 ): Promise<void> {
   return deleteJson(baseUrl, `/api/rules/data/${ruleId}`);
-}
-
-export function resetRules(baseUrl: string): Promise<RulesResponse> {
-  return postJson(baseUrl, "/api/rules/reset", {});
 }

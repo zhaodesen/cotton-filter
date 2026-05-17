@@ -385,13 +385,6 @@ class RuleRepository:
             if owns_connection:
                 active_connection.close()
 
-    def reset_defaults(self) -> None:
-        self.initialize()
-        with closing(self.connect()) as connection:
-            connection.execute(f"DELETE FROM {COLUMN_RULE_TABLE}")
-            connection.execute(f"DELETE FROM {DATA_RULE_TABLE}")
-            self.seed_defaults(connection, force=True)
-
     def load_ruleset(self) -> RuleSet:
         self.initialize()
         return RuleSet(
@@ -433,39 +426,6 @@ class RuleRepository:
             connection.commit()
         return self.get_column_rule(rule_id)
 
-    def update_column_rule(self, rule_id: int, payload: dict[str, Any]) -> ColumnRule:
-        self.initialize()
-        existing = self.get_column_rule(rule_id)
-        merged = {
-            "field_name": payload.get("field_name", existing.field_name),
-            "alias": payload.get("alias", existing.alias),
-            "enabled": payload.get("enabled", existing.enabled),
-            "sort_order": payload.get("sort_order", existing.sort_order),
-            "notes": payload.get("notes", existing.notes),
-        }
-        rule = self._column_rule_from_payload(merged)
-        with closing(self.connect()) as connection:
-            connection.execute(
-                f"""
-                UPDATE {COLUMN_RULE_TABLE}
-                SET field_name = ?, alias = ?, alias_key = ?, enabled = ?,
-                    sort_order = ?, notes = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    rule.field_name,
-                    rule.alias,
-                    rule.alias_key,
-                    int(rule.enabled),
-                    rule.sort_order,
-                    rule.notes,
-                    utc_now(),
-                    rule_id,
-                ),
-            )
-            connection.commit()
-        return self.get_column_rule(rule_id)
-
     def delete_column_rule(self, rule_id: int) -> None:
         self.initialize()
         with closing(self.connect()) as connection:
@@ -496,40 +456,6 @@ class RuleRepository:
         rule = self._data_rule_from_payload(payload)
         with closing(self.connect()) as connection:
             rule_id = self._insert_data_rule(connection, rule, ignore_duplicates=False)
-            connection.commit()
-        return self.get_data_rule(rule_id)
-
-    def update_data_rule(self, rule_id: int, payload: dict[str, Any]) -> DataRule:
-        self.initialize()
-        existing = self.get_data_rule(rule_id)
-        merged = {
-            "field_name": payload.get("field_name", existing.field_name),
-            "rule_name": payload.get("rule_name", existing.rule_name),
-            "rule_type": payload.get("rule_type", existing.rule_type),
-            "match_value": payload.get("match_value", existing.match_value),
-            "min_value": payload.get("min_value", existing.min_value),
-            "max_value": payload.get("max_value", existing.max_value),
-            "min_inclusive": payload.get("min_inclusive", existing.min_inclusive),
-            "max_inclusive": payload.get("max_inclusive", existing.max_inclusive),
-            "score_delta": payload.get("score_delta", existing.score_delta),
-            "output_value": payload.get("output_value", existing.output_value),
-            "enabled": payload.get("enabled", existing.enabled),
-            "sort_order": payload.get("sort_order", existing.sort_order),
-            "notes": payload.get("notes", existing.notes),
-        }
-        rule = self._data_rule_from_payload(merged)
-        with closing(self.connect()) as connection:
-            connection.execute(
-                f"""
-                UPDATE {DATA_RULE_TABLE}
-                SET field_name = ?, rule_name = ?, rule_type = ?, match_value = ?,
-                    match_key = ?, min_value = ?, max_value = ?, min_inclusive = ?,
-                    max_inclusive = ?, score_delta = ?, output_value = ?, enabled = ?,
-                    sort_order = ?, notes = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                self._data_rule_values(rule) + (utc_now(), rule_id),
-            )
             connection.commit()
         return self.get_data_rule(rule_id)
 
