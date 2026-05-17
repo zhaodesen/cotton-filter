@@ -213,14 +213,210 @@ button:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto auto auto minmax(320px, 1fr) 190px;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
-  min-height: 100vh;
+  height: 100vh;
   padding: 26px 28px;
 }
 
-.app-shell.rules-mode {
-  grid-template-rows: auto auto minmax(0, 1fr);
+.filter-hero {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.filter-hero-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(300px, 100%);
+}
+
+.hero-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--r-md);
+  color: var(--on-accent);
+  background: var(--accent);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 14px -8px rgba(31, 201, 158, 0.5);
+}
+
+.hero-add:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+.hero-add:active:not(:disabled) {
+  background: var(--accent-press);
+  filter: none;
+  transform: translateY(0);
+}
+
+.hero-add:disabled {
+  color: rgba(4, 19, 14, 0.42);
+  background: rgba(31, 201, 158, 0.16);
+  box-shadow: none;
+}
+
+.hero-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-add-label {
+  line-height: 1;
+}
+
+.hero-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.hero-open:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.04);
+  transform: none;
+}
+
+.hero-open:disabled {
+  color: var(--text-subtle);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.hero-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.hero-progress-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--border) inset;
+  overflow: hidden;
+}
+
+.hero-progress-fill {
+  display: block;
+  min-width: 8px;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width 260ms var(--ease);
+}
+
+.hero-progress-text {
+  min-width: 46px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.toast {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 11px 10px 11px 16px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-pop);
+  font-size: 13px;
+  transform: translateX(-50%);
+  animation: toast-in 220ms var(--ease);
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-action {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-sm);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.toast-action:hover:not(:disabled) {
+  background: rgba(31, 201, 158, 0.2);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  transform: none;
+}
+
+.toast-action:disabled {
+  opacity: 0.5;
+}
+
+.toast-close {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.toast-close:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  transform: none;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .topbar {
@@ -314,20 +510,6 @@ h2 {
   font-weight: 700;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
-}
-
-/* ============================================================
-   工具栏
-   ============================================================ */
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.toolbar .primary-button {
-  margin-left: auto;
 }
 
 /* ============================================================
@@ -655,32 +837,8 @@ select:focus {
 }
 
 /* ============================================================
-   工作区面板
+   面板头 / 小按钮
    ============================================================ */
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  min-height: 0;
-}
-
-.side-pane,
-.log-pane {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--surface);
-  box-shadow:
-    var(--shadow-md),
-    inset 0 1px 0 var(--edge-light);
-}
-
-.side-pane {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-}
 
 .pane-header {
   display: flex;
@@ -691,25 +849,6 @@ select:focus {
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
 }
-
-.pane-header span {
-  min-width: 0;
-  color: var(--text-subtle);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.empty-text {
-  color: var(--text-subtle);
-  text-align: center;
-  font-size: 13px;
-}
-
-/* ============================================================
-   小按钮 / 文字按钮
-   ============================================================ */
 
 .icon-button {
   width: 34px;
@@ -728,110 +867,9 @@ select:focus {
   transform: none;
 }
 
-.text-button {
-  min-height: 32px;
-  border: 0;
-  padding: 0 4px;
-  color: var(--accent);
-  background: transparent;
-  font-weight: 650;
-}
-
-.text-button:hover:not(:disabled) {
-  background: transparent;
-  color: var(--accent);
-  filter: brightness(1.15);
-  transform: none;
-}
-
-.text-button:disabled {
-  background: transparent;
-  color: var(--text-subtle);
-}
-
 /* ============================================================
-   结果列表
+   动效
    ============================================================ */
-
-.result-list {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: auto;
-}
-
-.result-item {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 12px;
-  padding: 15px 20px;
-  border-bottom: 1px solid var(--border);
-  transition: background var(--dur) var(--ease);
-}
-
-.result-item:hover {
-  background: var(--surface-hover);
-}
-
-.result-item strong,
-.result-item span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.result-item strong {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.result-item span {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-/* ============================================================
-   日志区
-   ============================================================ */
-
-.log-pane {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-}
-
-pre {
-  margin: 0;
-  padding: 16px 20px;
-  color: var(--text-muted);
-  font-family:
-    "SF Mono", "SFMono-Regular", ui-monospace, Consolas,
-    "Liberation Mono", "Microsoft YaHei Mono", monospace;
-  font-size: 12px;
-  line-height: 1.65;
-  overflow: auto;
-  white-space: pre-wrap;
-}
-
-/* ============================================================
-   语义色 / 动效
-   ============================================================ */
-
-.ok {
-  color: var(--ok) !important;
-}
-
-.danger {
-  color: var(--danger) !important;
-}
-
-.muted {
-  color: var(--text-muted) !important;
-}
 
 .spin {
   animation: spin 850ms linear infinite;
@@ -850,10 +888,6 @@ pre {
 @media (max-width: 980px) {
   body {
     min-width: 760px;
-  }
-
-  .side-pane {
-    min-height: 220px;
   }
 }
 

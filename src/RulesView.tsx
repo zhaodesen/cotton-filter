@@ -316,7 +316,7 @@ export default function RulesView({
 
   const showRange = dataForm.rule_type !== "value_alias";
   const showAlias = dataForm.rule_type === "value_alias";
-  const showScore = dataForm.rule_type !== "filter_range";
+  const showScore = dataForm.rule_type === "score_range";
 
   return (
     <section className="rules-view">

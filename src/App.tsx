@@ -3,25 +3,21 @@ import {
   Database,
   FilePlus2,
   FileSpreadsheet,
+  FolderOpen,
   Loader2,
   RefreshCw,
-  RotateCcw,
-  XCircle,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
 
-import { FileResult, expandTargets, filterExcelFiles } from "./api";
+import { expandTargets, filterExcelFilesStream } from "./api";
 import { BackendService, startBackend } from "./backend";
 import RulesView from "./RulesView";
-
-function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() || path;
-}
 
 function mergeUnique(current: string[], incoming: string[]): string[] {
   return Array.from(new Set([...current, ...incoming]));
@@ -40,16 +36,14 @@ export default function App() {
   const [files, setFiles] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>(["正在启动 Python 后端"]);
-  const [results, setResults] = useState<FileResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
+  const [notice, setNotice] = useState<string | null>(null);
   const [backendReady, setBackendReady] = useState(false);
   const [updateState, setUpdateState] = useState("未检查");
   const backendRef = useRef<BackendService | null>(null);
-
-  const totalKept = useMemo(
-    () => results.reduce((sum, result) => sum + result.kept, 0),
-    [results],
-  );
 
   function appendLog(message: string) {
     setLogs((current) => [...current, message]);
@@ -89,22 +83,40 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   async function runFilterFor(fileList: string[]) {
     if (!apiBase || isProcessing || !fileList.length) {
       return;
     }
     setIsProcessing(true);
-    setResults([]);
+    setNotice(null);
+    setProgress({ done: 0, total: fileList.length });
     appendLog("开始筛选");
     try {
-      const response = await filterExcelFiles(apiBase, fileList, outputDir);
+      const response = await filterExcelFilesStream(
+        apiBase,
+        fileList,
+        outputDir,
+        (event) => {
+          setProgress({ done: event.index, total: event.total });
+        },
+      );
       setOutputDir(response.output_dir);
-      setResults(response.results);
       setLogs((current) => [...current, ...response.logs]);
+      setNotice("已筛选完毕，请打开目录进行查看");
     } catch (error) {
       appendLog(`筛选失败: ${formatError(error)}`);
+      setNotice(null);
     } finally {
       setIsProcessing(false);
+      setProgress(null);
     }
   }
 
@@ -129,13 +141,6 @@ export default function App() {
     if (selected) {
       await addTargets(Array.isArray(selected) ? selected : [selected]);
     }
-  }
-
-  function clearAll() {
-    setFiles([]);
-    setResults([]);
-    setOutputDir(null);
-    setLogs(["已清空待处理文件"]);
   }
 
   async function openResultDir() {
@@ -198,75 +203,66 @@ export default function App() {
       </section>
 
       {activeView === "filter" ? (
-        <>
-          <section className="toolbar" aria-label="操作">
+        <section className="filter-hero" aria-label="文件筛选">
+          <div className="filter-hero-inner">
             <button
+              className="hero-add"
               type="button"
               onClick={selectFiles}
               disabled={!backendReady || isProcessing}
             >
-              {isProcessing ? (
-                <Loader2 className="spin" size={18} />
-              ) : (
-                <FilePlus2 size={18} />
-              )}
-              添加 Excel
-            </button>
-            <button type="button" onClick={clearAll} disabled={isProcessing}>
-              <RotateCcw size={18} />
-              清空
-            </button>
-          </section>
-
-          <section className="workspace">
-            <aside className="side-pane">
-              <div className="pane-header">
-                <h2>筛选结果</h2>
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={openResultDir}
-                  disabled={!outputDir}
-                >
-                  打开目录
-                </button>
-              </div>
-              <div className="result-list">
-                {results.length === 0 ? (
-                  <p className="empty-text">暂无结果</p>
+              <span className="hero-add-icon">
+                {isProcessing ? (
+                  <Loader2 className="spin" size={17} />
                 ) : (
-                  results.map((result) => (
-                    <div className="result-item" key={result.src}>
-                      {result.error ? (
-                        <XCircle className="danger" size={18} />
-                      ) : (
-                        <CheckCircle2 className="ok" size={18} />
-                      )}
-                      <div>
-                        <strong>{fileName(result.src)}</strong>
-                        <span>
-                          {result.error
-                            ? result.error
-                            : `保留 ${result.kept} 行${
-                                result.out ? ` -> ${fileName(result.out)}` : ""
-                              }`}
-                        </span>
-                      </div>
-                    </div>
-                  ))
+                  <FilePlus2 size={17} />
                 )}
-              </div>
-            </aside>
-          </section>
+              </span>
+              <span className="hero-add-label">
+                {isProcessing ? "正在筛选…" : "添加 Excel"}
+              </span>
+            </button>
 
-          <section className="log-pane" aria-label="处理日志">
-            <div className="pane-header">
-              <h2>处理日志</h2>
-              <span>{logs.length} 条</span>
-            </div>
-            <pre>{logs.join("\n")}</pre>
-          </section>
-        </>
+            {isProcessing && progress ? (
+              <div
+                className="hero-progress"
+                role="progressbar"
+                aria-label="筛选进度"
+                aria-valuemin={0}
+                aria-valuemax={progress.total}
+                aria-valuenow={progress.done}
+              >
+                <div className="hero-progress-track">
+                  <span
+                    className="hero-progress-fill"
+                    style={{
+                      width: `${
+                        progress.total
+                          ? Math.round(
+                              (progress.done / progress.total) * 100,
+                            )
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+                <span className="hero-progress-text">
+                  {progress.done}/{progress.total}
+                </span>
+              </div>
+            ) : (
+              <button
+                className="hero-open"
+                type="button"
+                onClick={openResultDir}
+                disabled={!outputDir}
+              >
+                <FolderOpen size={15} />
+                打开目录
+              </button>
+            )}
+          </div>
+        </section>
       ) : (
         <RulesView
           baseUrl={apiBase}
@@ -274,6 +270,29 @@ export default function App() {
           onLog={appendLog}
         />
       )}
+
+      {notice ? (
+        <div className="toast" role="status">
+          <CheckCircle2 size={18} className="toast-icon" />
+          <span className="toast-text">{notice}</span>
+          <button
+            className="toast-action"
+            type="button"
+            onClick={openResultDir}
+            disabled={!outputDir}
+          >
+            打开目录
+          </button>
+          <button
+            className="toast-close"
+            type="button"
+            aria-label="关闭"
+            onClick={() => setNotice(null)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      ) : null}
     </main>
   );
 }

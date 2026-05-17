@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+from typing import Iterator
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from cotton_filter_app.build_info import BUILD_VERSION
 from cotton_filter_app.constants import APP_NAME
-from cotton_filter_app.file_utils import default_output_dir, expand_targets, filter_files
+from cotton_filter_app.file_utils import (
+    default_output_dir,
+    expand_targets,
+    filter_files,
+    iter_filter_files,
+)
 from cotton_filter_app.rules import ColumnRule, DataRule, RuleRepository
 
 
@@ -313,6 +321,69 @@ def create_app() -> FastAPI:
                 )
                 for result in results
             ],
+        )
+
+    @app.post("/api/filter/stream")
+    def filter_excel_stream(request: FilterRequest) -> StreamingResponse:
+        files = [Path(path) for path in request.files]
+        if not files:
+            raise HTTPException(status_code=400, detail="请先选择 Excel 文件")
+
+        out_dir = (
+            Path(request.output_dir)
+            if request.output_dir
+            else default_output_dir(files)
+        )
+
+        def sse(payload: dict[str, object]) -> str:
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        def event_stream() -> Iterator[str]:
+            logs: list[str] = ["开始筛选"]
+            results: list[dict[str, object]] = []
+            try:
+                for index, total, result in iter_filter_files(
+                    files, out_dir, log=logs.append
+                ):
+                    item = {
+                        "src": str(result.src.resolve()),
+                        "out": str(result.out.resolve()) if result.out else None,
+                        "kept": result.kept,
+                        "error": result.error,
+                    }
+                    results.append(item)
+                    yield sse(
+                        {
+                            "type": "progress",
+                            "index": index,
+                            "total": total,
+                            "name": result.src.name,
+                            "kept": result.kept,
+                            "error": result.error,
+                        }
+                    )
+
+                total_kept = sum(int(item["kept"] or 0) for item in results)
+                logs.append(
+                    f"筛选完成: 共 {len(results)} 个文件，命中 {total_kept} 行"
+                )
+                yield sse(
+                    {
+                        "type": "done",
+                        "output_dir": str(out_dir.resolve()),
+                        "total_files": len(results),
+                        "total_kept": total_kept,
+                        "results": results,
+                        "logs": logs,
+                    }
+                )
+            except Exception as error:  # noqa: BLE001
+                yield sse({"type": "error", "detail": str(error)})
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     return app

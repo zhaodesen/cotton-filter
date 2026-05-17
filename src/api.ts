@@ -164,15 +164,78 @@ export function getDefaultOutputDir(
   return postJson(baseUrl, "/api/default-output-dir", { files });
 }
 
-export function filterExcelFiles(
+export interface FilterProgress {
+  index: number;
+  total: number;
+  name: string;
+  kept: number;
+  error: string | null;
+}
+
+export async function filterExcelFilesStream(
   baseUrl: string,
   files: string[],
   outputDir: string | null,
+  onProgress: (progress: FilterProgress) => void,
 ): Promise<FilterResponse> {
-  return postJson(baseUrl, "/api/filter", {
-    files,
-    output_dir: outputDir,
+  const response = await fetch(`${baseUrl}/api/filter/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ files, output_dir: outputDir }),
   });
+
+  if (!response.ok || !response.body) {
+    const payload = await response.json().catch(() => null);
+    const detail = payload?.detail || response.statusText;
+    throw new Error(String(detail));
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: FilterResponse | null = null;
+
+  const handleEvent = (raw: string) => {
+    const line = raw
+      .split("\n")
+      .find((part) => part.startsWith("data:"));
+    if (!line) {
+      return;
+    }
+    const event = JSON.parse(line.slice(5).trim());
+    if (event.type === "progress") {
+      onProgress(event as FilterProgress);
+    } else if (event.type === "done") {
+      result = event as FilterResponse;
+    } else if (event.type === "error") {
+      throw new Error(String(event.detail || "筛选失败"));
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) {
+      buffer += decoder.decode(value, { stream: true });
+      let separator = buffer.indexOf("\n\n");
+      while (separator !== -1) {
+        handleEvent(buffer.slice(0, separator));
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf("\n\n");
+      }
+    }
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    handleEvent(buffer);
+  }
+
+  if (!result) {
+    throw new Error("筛选未返回结果");
+  }
+  return result;
 }
 
 export function listRules(baseUrl: string): Promise<RulesResponse> {
