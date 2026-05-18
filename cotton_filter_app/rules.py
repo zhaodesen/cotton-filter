@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ DATA_RULE_TABLE = "data_rules"
 METADATA_TABLE = "rule_metadata"
 RULE_DB_ENV = "COTTON_FILTER_RULE_DB"
 DEFAULT_DB_NAME = "rules.sqlite3"
+RULE_EXPORT_VERSION = 1
 DATA_RULE_TYPES = {"value_alias", "score_range", "filter_range", "keyword_filter"}
 DEFAULT_SEEDED_KEY = "default_rules_seeded"
 DEFAULT_REQUIRED_FIELDS = ("基差", "长度", "马值")
@@ -570,6 +572,110 @@ class RuleRepository:
             raise KeyError(rule_id)
         return self._row_to_data_rule(row)
 
+    def export_rules(self) -> dict[str, Any]:
+        """导出可迁移的规则快照。"""
+
+        self.initialize()
+        return {
+            "format_version": RULE_EXPORT_VERSION,
+            "app_name": APP_NAME,
+            "exported_at": utc_now(),
+            "column_rules": [
+                {
+                    "field_name": rule.field_name,
+                    "alias": rule.alias,
+                    "enabled": rule.enabled,
+                    "sort_order": rule.sort_order,
+                    "notes": rule.notes,
+                }
+                for rule in self.list_column_rules()
+            ],
+            "data_rules": [
+                {
+                    "field_name": rule.field_name,
+                    "rule_name": rule.rule_name,
+                    "rule_type": rule.rule_type,
+                    "match_value": rule.match_value,
+                    "min_value": rule.min_value,
+                    "max_value": rule.max_value,
+                    "min_inclusive": rule.min_inclusive,
+                    "max_inclusive": rule.max_inclusive,
+                    "score_delta": rule.score_delta,
+                    "output_value": rule.output_value,
+                    "enabled": rule.enabled,
+                    "sort_order": rule.sort_order,
+                    "notes": rule.notes,
+                }
+                for rule in self.list_data_rules()
+            ],
+        }
+
+    def export_rules_to_file(self, path: Path) -> dict[str, int]:
+        """把全部规则导出到 JSON 文件。"""
+
+        snapshot = self.export_rules()
+        target_path = path.expanduser()
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as error:
+            raise ValueError(f"写出规则文件失败: {error}") from error
+        return {
+            "column_rules": len(snapshot["column_rules"]),
+            "data_rules": len(snapshot["data_rules"]),
+        }
+
+    def import_rules_from_file(self, path: Path) -> dict[str, int]:
+        """从 JSON 文件导入全部规则，替换当前规则库。"""
+
+        try:
+            payload = json.loads(path.expanduser().read_text(encoding="utf-8"))
+        except OSError as error:
+            raise ValueError(f"读取规则文件失败: {error}") from error
+        except json.JSONDecodeError as error:
+            raise ValueError(f"规则文件不是有效 JSON: {error}") from error
+
+        return self.import_rules(payload)
+
+    def import_rules(self, payload: dict[str, Any]) -> dict[str, int]:
+        """导入规则快照，替换当前全部列名规则和数据规则。"""
+
+        self.initialize()
+        if not isinstance(payload, dict):
+            raise ValueError("规则文件格式不正确")
+        if int(payload.get("format_version") or 0) != RULE_EXPORT_VERSION:
+            raise ValueError("规则文件版本不支持")
+
+        column_rules = [
+            self._column_rule_from_payload(item)
+            for item in self._payload_list(payload, "column_rules")
+        ]
+        data_rules = [
+            self._data_rule_from_import_payload(item)
+            for item in self._payload_list(payload, "data_rules")
+        ]
+        self._validate_imported_data_rules(data_rules)
+
+        with closing(self.connect()) as connection:
+            connection.execute(f"DELETE FROM {COLUMN_RULE_TABLE}")
+            connection.execute(f"DELETE FROM {DATA_RULE_TABLE}")
+            for rule in column_rules:
+                self._insert_column_rule(connection, rule, ignore_duplicates=False)
+            for rule in data_rules:
+                self._insert_data_rule(connection, rule, ignore_duplicates=False)
+            self._mark_default_seeded(connection)
+            self.normalize_color_grade_aliases(connection)
+            self.delete_legacy_interval_rules(connection)
+            connection.commit()
+
+        return {
+            "column_rules": len(column_rules),
+            "data_rules": len(data_rules),
+        }
+
     def _insert_column_rule(
         self,
         connection: sqlite3.Connection,
@@ -671,6 +777,72 @@ class RuleRepository:
             notes=str(payload.get("notes") or "").strip(),
         )
 
+    def _data_rule_from_import_payload(self, payload: dict[str, Any]) -> DataRule:
+        field_name = str(payload.get("field_name") or "").strip()
+        rule_name = str(payload.get("rule_name") or "").strip()
+        rule_type = str(payload.get("rule_type") or "").strip()
+        if not field_name:
+            raise ValueError("字段不能为空")
+        if rule_type not in DATA_RULE_TYPES:
+            raise ValueError("数据规则类型不支持")
+
+        match_value = str(payload.get("match_value") or "").strip()
+        output_value = str(payload.get("output_value") or "").strip()
+        if rule_type == "value_alias":
+            if not match_value:
+                raise ValueError("值别名规则必须填写匹配值")
+            if not output_value and field_name == "颜色级":
+                output_value = standard_color_grade_value(match_value)
+            if not output_value:
+                raise ValueError("值别名规则必须填写输出值")
+        elif rule_type in {"score_range", "filter_range"}:
+            if not match_value:
+                raise ValueError("区间规则必须选择适用值")
+            if (
+                self._optional_float(payload.get("min_value")) is None
+                and self._optional_float(payload.get("max_value")) is None
+            ):
+                raise ValueError("区间规则至少要填写一个边界")
+        elif rule_type == "keyword_filter" and not match_value:
+            raise ValueError("关键词过滤必须填写关键词")
+
+        score_delta = self._optional_int(payload.get("score_delta"))
+        if rule_type == "score_range" and score_delta is None:
+            raise ValueError("评分区间必须填写加减分")
+        if not rule_name:
+            rule_name = self._default_data_rule_name(field_name, rule_type, match_value)
+
+        return DataRule(
+            id=None,
+            field_name=field_name,
+            rule_name=rule_name,
+            rule_type=rule_type,
+            match_value=match_value,
+            match_key=normalize_text(match_value),
+            min_value=self._optional_float(payload.get("min_value")),
+            max_value=self._optional_float(payload.get("max_value")),
+            min_inclusive=bool(payload.get("min_inclusive", True)),
+            max_inclusive=bool(payload.get("max_inclusive", True)),
+            score_delta=score_delta,
+            output_value=output_value,
+            enabled=bool(payload.get("enabled", True)),
+            sort_order=int(payload.get("sort_order") or 0),
+            notes=str(payload.get("notes") or "").strip(),
+        )
+
+    @staticmethod
+    def _validate_imported_data_rules(data_rules: list[DataRule]) -> None:
+        alias_outputs = {
+            (rule.field_name, normalize_text(rule.output_value))
+            for rule in data_rules
+            if rule.rule_type == "value_alias" and rule.enabled
+        }
+        for rule in data_rules:
+            if rule.rule_type not in {"score_range", "filter_range"}:
+                continue
+            if (rule.field_name, normalize_text(rule.match_value)) not in alias_outputs:
+                raise ValueError("适用值必须来自当前字段的值别名输出值")
+
     def _data_rule_from_payload(self, payload: dict[str, Any]) -> DataRule:
         field_name = str(payload.get("field_name") or "").strip()
         rule_name = str(payload.get("rule_name") or "").strip()
@@ -732,6 +904,15 @@ class RuleRepository:
             sort_order=int(payload.get("sort_order") or 0),
             notes=str(payload.get("notes") or "").strip(),
         )
+
+    @staticmethod
+    def _payload_list(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        values = payload.get(key)
+        if not isinstance(values, list):
+            raise ValueError("规则文件格式不正确")
+        if not all(isinstance(item, dict) for item in values):
+            raise ValueError("规则文件格式不正确")
+        return values
 
     def _value_alias_output_exists(self, field_name: str, output_value: str) -> bool:
         output_key = normalize_text(output_value)

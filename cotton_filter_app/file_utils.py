@@ -42,10 +42,11 @@ def iter_filter_files(
             out = unique_output_path(out_dir, src)
             kept = filter_file(src, out, log=log)
 
-            if kept == 0 and out.exists():
-                out.unlink()
-
-            result = FileResult(src=src, out=out if kept else None, kept=kept)
+            result = FileResult(
+                src=src,
+                out=out if out.exists() else None,
+                kept=kept,
+            )
             if log:
                 log(f"文件完成: {src.name}，保留 {kept} 行")
         except Exception as error:

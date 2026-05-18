@@ -1,5 +1,14 @@
-import { Columns3, Plus, SlidersHorizontal, Tags, X } from "lucide-react";
+import {
+  Columns3,
+  Download,
+  Plus,
+  SlidersHorizontal,
+  Tags,
+  Upload,
+  X,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 
 import {
   ColumnRule,
@@ -8,6 +17,8 @@ import {
   createDataRule,
   deleteColumnRule,
   deleteDataRule,
+  exportRules,
+  importRules,
   listRules,
 } from "./api";
 
@@ -383,6 +394,66 @@ export default function RulesView({
     }
   }
 
+  async function handleExportRules() {
+    if (!baseUrl || isSaving) {
+      return;
+    }
+    const selected = await save({
+      title: "导出全部规则",
+      defaultPath: "cotton-filter-rules.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!selected) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorText("");
+    try {
+      const response = await exportRules(baseUrl, selected);
+      onLog(`规则已导出: ${response.column_rules} 条列名规则，${response.data_rules} 条数据规则`);
+    } catch (error) {
+      setErrorText(formatError(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleImportRules() {
+    if (!baseUrl || isSaving) {
+      return;
+    }
+    const selected = await open({
+      title: "导入全部规则",
+      multiple: false,
+      directory: false,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!selected || Array.isArray(selected)) {
+      return;
+    }
+
+    const shouldImport = await confirm(
+      "导入会替换当前全部列名规则和数据规则，是否继续？",
+      { title: "导入规则", kind: "warning" },
+    );
+    if (!shouldImport) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorText("");
+    try {
+      const response = await importRules(baseUrl, selected);
+      await reloadRules();
+      onLog(`规则已导入: ${response.column_rules} 条列名规则，${response.data_rules} 条数据规则`);
+    } catch (error) {
+      setErrorText(formatError(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const showAlias = dataForm.rule_type === "value_alias";
   const showScore = dataForm.rule_type === "score_range";
   const showKeyword = dataForm.rule_type === "keyword_filter";
@@ -433,6 +504,26 @@ export default function RulesView({
                   ? "值别名"
                   : "评分与过滤区间"}
             </h2>
+            <div className="rules-transfer-actions">
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={handleExportRules}
+                disabled={!backendReady || isSaving}
+              >
+                <Download size={15} />
+                导出规则
+              </button>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={handleImportRules}
+                disabled={!backendReady || isSaving}
+              >
+                <Upload size={15} />
+                导入规则
+              </button>
+            </div>
           </div>
           {activePanel === "columns" ? (
             <div className="field-rule-list">

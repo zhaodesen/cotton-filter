@@ -130,6 +130,20 @@ class RulesResponse(BaseModel):
     data_rules: list[DataRuleResponse]
 
 
+class RuleFileRequest(BaseModel):
+    """规则导入导出文件路径。"""
+
+    path: str
+
+
+class RuleFileResponse(BaseModel):
+    """规则导入导出结果。"""
+
+    path: str
+    column_rules: int
+    data_rules: int
+
+
 def model_payload(model: BaseModel) -> dict[str, object]:
     """兼容 Pydantic v1/v2 的局部更新 payload。"""
 
@@ -243,6 +257,38 @@ def create_app() -> FastAPI:
         except (KeyError, ValueError) as error:
             raise rule_error(error) from error
         return {"status": "ok"}
+
+    @app.post("/api/rules/export", response_model=RuleFileResponse)
+    def export_rules(request: RuleFileRequest) -> RuleFileResponse:
+        if not request.path.strip():
+            raise HTTPException(status_code=400, detail="请选择导出文件")
+        path = Path(request.path).expanduser()
+        try:
+            counts = rule_repository.export_rules_to_file(path)
+        except ValueError as error:
+            raise rule_error(error) from error
+        return RuleFileResponse(
+            path=str(path.resolve()),
+            column_rules=counts["column_rules"],
+            data_rules=counts["data_rules"],
+        )
+
+    @app.post("/api/rules/import", response_model=RuleFileResponse)
+    def import_rules(request: RuleFileRequest) -> RuleFileResponse:
+        if not request.path.strip():
+            raise HTTPException(status_code=400, detail="请选择导入文件")
+        path = Path(request.path).expanduser()
+        if not path.exists():
+            raise HTTPException(status_code=400, detail="规则文件不存在")
+        try:
+            counts = rule_repository.import_rules_from_file(path)
+        except ValueError as error:
+            raise rule_error(error) from error
+        return RuleFileResponse(
+            path=str(path.resolve()),
+            column_rules=counts["column_rules"],
+            data_rules=counts["data_rules"],
+        )
 
     @app.post("/api/expand", response_model=ExpandResponse)
     def expand(request: ExpandRequest) -> ExpandResponse:

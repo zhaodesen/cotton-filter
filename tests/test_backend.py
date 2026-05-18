@@ -76,6 +76,51 @@ class BackendApiTest(unittest.TestCase):
         }
         self.assertIn("客户马值字段", aliases)
 
+    def test_rules_api_exports_and_imports_all_rules(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            export_path = Path(temp_dir) / "rules.json"
+            client = TestClient(create_app())
+
+            create_response = client.post(
+                "/api/rules/column",
+                json={
+                    "field_name": "马值",
+                    "alias": "客户马值字段",
+                    "enabled": True,
+                },
+            )
+            export_response = client.post(
+                "/api/rules/export",
+                json={"path": str(export_path)},
+            )
+            client.post(
+                "/api/rules/column",
+                json={
+                    "field_name": "马值",
+                    "alias": "临时马值字段",
+                    "enabled": True,
+                },
+            )
+            import_response = client.post(
+                "/api/rules/import",
+                json={"path": str(export_path)},
+            )
+            rules_response = client.get("/api/rules")
+
+            self.assertEqual(create_response.status_code, 200)
+            self.assertEqual(export_response.status_code, 200)
+            self.assertEqual(import_response.status_code, 200)
+            self.assertTrue(export_path.exists())
+
+            payload = rules_response.json()
+            aliases = {
+                rule["alias"]
+                for rule in payload["column_rules"]
+                if rule["field_name"] == "马值"
+            }
+            self.assertIn("客户马值字段", aliases)
+            self.assertNotIn("临时马值字段", aliases)
+
 
 if __name__ == "__main__":
     unittest.main()

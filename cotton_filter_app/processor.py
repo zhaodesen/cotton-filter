@@ -7,14 +7,15 @@ from typing import Callable
 
 import pandas as pd
 
-from .header import build_column_map, find_header_row, normalize_text
-from .models import ColumnMap, Record
+from .header import build_column_map, find_header_row
+from .models import ColumnMap, ProcessedRow, Record, SheetProcessResult
 from .rules import DataRule, RuleSet, load_ruleset, matches_range
 from .scoring import extract_max_color_percent, parse_float, score_record
 from .text_utils import normalize_text
 
 ProgressLogger = Callable[[str], None]
 ColorColumns = list[tuple[int, str]]
+ISSUE_COLUMNS = ("异常类型", "异常说明", "Excel行号", "标准字段", "原列名", "原值")
 
 
 def is_empty_cell(value: object) -> bool:
@@ -81,6 +82,138 @@ def build_color_summary(
     return "，".join(parts)
 
 
+def clean_header_label(value: object) -> str:
+    """把原始表头整理成可写出的列名。"""
+
+    if is_empty_cell(value):
+        return ""
+    return str(value).replace("\n", " ").strip()
+
+
+def make_unique_headers(headers: list[str]) -> list[str]:
+    """避免输出 Excel 中重复列名造成歧义。"""
+
+    seen: dict[str, int] = {}
+    unique_headers: list[str] = []
+    for index, header in enumerate(headers, start=1):
+        base = header or f"列{index}"
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        unique_headers.append(base if count == 1 else f"{base}_{count}")
+    return unique_headers
+
+
+def build_original_headers(
+    raw_frame: pd.DataFrame,
+    header_row: int,
+    color_columns: ColorColumns | None = None,
+) -> list[str]:
+    """保留原表头；组合颜色级子列补上父级表头，便于追溯。"""
+
+    header_cells = raw_frame.iloc[header_row].tolist()
+    subheader_cells = (
+        raw_frame.iloc[header_row + 1].tolist()
+        if header_row + 1 < len(raw_frame)
+        else []
+    )
+    color_column_indexes = {column_index for column_index, _ in color_columns or []}
+    current_group = ""
+    headers: list[str] = []
+
+    for column_index, cell_value in enumerate(header_cells):
+        header = clean_header_label(cell_value)
+        if header:
+            current_group = header
+
+        subheader = (
+            clean_header_label(subheader_cells[column_index])
+            if column_index < len(subheader_cells)
+            else ""
+        )
+        if (
+            subheader
+            and current_group
+            and (column_index in color_column_indexes or "颜色" in current_group)
+        ):
+            headers.append(f"{current_group or header}/{subheader}")
+        else:
+            headers.append(header)
+
+    return make_unique_headers(headers)
+
+
+def raw_row_to_dict(row: pd.Series, headers: list[str]) -> Record:
+    """按原始列名保留一行 Excel 数据。"""
+
+    return {
+        header: row.iloc[column_index]
+        for column_index, header in enumerate(headers)
+    }
+
+
+def issue_row(
+    *,
+    issue_type: str,
+    message: str,
+    headers: list[str],
+    raw_row: pd.Series | None = None,
+    excel_row_number: int | None = None,
+    field_name: str = "",
+    original_column: str = "",
+    original_value: object = "",
+) -> Record:
+    """构造识别异常行，行级异常会附带原始 Excel 数据。"""
+
+    row_data = raw_row_to_dict(raw_row, headers) if raw_row is not None else {}
+    row_data.update(
+        {
+            "异常类型": issue_type,
+            "异常说明": message,
+            "Excel行号": excel_row_number,
+            "标准字段": field_name,
+            "原列名": original_column,
+            "原值": original_value,
+        }
+    )
+    return row_data
+
+
+def value_alias_rules_exist(rule_set: RuleSet, field_name: str) -> bool:
+    """判断某字段是否有值别名规则。"""
+
+    return any(
+        rule.rule_type == "value_alias" and rule.field_name == field_name
+        for rule in rule_set.enabled_data_rules()
+    )
+
+
+def value_is_covered_by_alias(
+    rule_set: RuleSet,
+    field_name: str,
+    value: object,
+) -> bool:
+    """判断单元格值是否被当前字段的值别名规则覆盖。"""
+
+    if not value_alias_rules_exist(rule_set, field_name) or is_empty_cell(value):
+        return True
+    if rule_set.value_alias_output(field_name, value) is not None:
+        return True
+
+    value_key = normalize_text(value)
+    return any(
+        rule.rule_type == "value_alias"
+        and rule.field_name == field_name
+        and (
+            (bool(rule.match_key) and rule.match_key in value_key)
+            or (
+                bool(normalize_text(rule.output_value))
+                and normalize_text(rule.output_value) in value_key
+            )
+        )
+        for rule in rule_set.enabled_data_rules()
+    )
+
+
 def build_record(
     row: pd.Series,
     column_map: ColumnMap,
@@ -114,6 +247,25 @@ def build_record(
     return record
 
 
+def build_filter_mask(
+    frame: pd.DataFrame,
+    rule_set: RuleSet,
+) -> pd.Series:
+    """根据过滤规则生成命中掩码。"""
+
+    filter_rules = rule_set.filter_rules()
+    if not filter_rules:
+        return pd.Series(True, index=frame.index)
+
+    mask = pd.Series(True, index=frame.index)
+    for rule in filter_rules:
+        mask = mask & frame.apply(
+            lambda row: filter_rule_matches(row, rule, rule_set),
+            axis=1,
+        )
+    return mask
+
+
 def format_output_frame(
     records: list[Record],
     rule_set: RuleSet | None = None,
@@ -122,23 +274,42 @@ def format_output_frame(
 
     active_rule_set = rule_set or load_ruleset()
     frame = pd.DataFrame(records)
-    filter_rules = active_rule_set.filter_rules()
-    if filter_rules:
-        mask = pd.Series(True, index=frame.index)
-        for rule in filter_rules:
-            mask = mask & frame.apply(
-                lambda row: filter_rule_matches(row, rule, active_rule_set),
-                axis=1,
-            )
-        kept = frame[mask].copy()
-    else:
-        kept = frame.copy()
+    kept = frame[build_filter_mask(frame, active_rule_set)].copy()
 
     kept = kept.rename(columns={"_得分": "得分", "_与基差差距": "与基差差距"})
     available_columns = [
         column for column in active_rule_set.output_fields if column in kept.columns
     ]
     return kept[available_columns]
+
+
+def format_original_output_frame(
+    processed_rows: list[ProcessedRow],
+    headers: list[str],
+    rule_set: RuleSet,
+) -> pd.DataFrame:
+    """按原始列名输出筛选命中的原始行，并追加计算列。"""
+
+    if not processed_rows:
+        return pd.DataFrame(columns=[*headers, "得分", "与基差差距"])
+
+    record_frame = pd.DataFrame([row.record for row in processed_rows])
+    kept_rows = [
+        row
+        for row, keep in zip(
+            processed_rows,
+            build_filter_mask(record_frame, rule_set).tolist(),
+        )
+        if keep
+    ]
+    output_rows: list[Record] = []
+    for processed_row in kept_rows:
+        row_data = raw_row_to_dict(processed_row.raw_row, headers)
+        row_data["得分"] = processed_row.record.get("_得分")
+        row_data["与基差差距"] = processed_row.record.get("_与基差差距")
+        output_rows.append(row_data)
+
+    return pd.DataFrame(output_rows, columns=[*headers, "得分", "与基差差距"])
 
 
 def filter_rule_matches(
@@ -221,12 +392,144 @@ def process_sheet(
     return output_frame if len(output_frame) else None
 
 
+def process_sheet_result(
+    raw_frame: pd.DataFrame,
+    log: ProgressLogger | None = None,
+    sheet_name: str = "",
+) -> SheetProcessResult:
+    """处理单个 sheet，返回原始列输出结果和识别异常。"""
+
+    rule_set = load_ruleset()
+    log_prefix = f"[{sheet_name}] " if sheet_name else ""
+    header_row = find_header_row(raw_frame, rule_set=rule_set)
+    if header_row < 0:
+        issue = issue_row(
+            issue_type="表头未识别",
+            message="前置行中未识别到满足必需字段的表头",
+            headers=[],
+        )
+        if log:
+            log(f"{log_prefix}未识别到表头，跳过")
+        return SheetProcessResult(
+            normal_frame=pd.DataFrame(),
+            issue_frame=pd.DataFrame([issue], columns=ISSUE_COLUMNS),
+        )
+
+    if log:
+        log(f"{log_prefix}识别到表头行: 第 {header_row + 1} 行")
+
+    header_cells = raw_frame.iloc[header_row].tolist()
+    column_map = build_column_map(header_cells, rule_set=rule_set)
+    color_columns = detect_color_columns(raw_frame, header_row, column_map, rule_set)
+    headers = build_original_headers(raw_frame, header_row, color_columns)
+    issue_rows: list[Record] = []
+
+    missing_columns = [
+        column_name for column_name in rule_set.required_fields if column_name not in column_map
+    ]
+    for field_name in missing_columns:
+        issue_rows.append(
+            issue_row(
+                issue_type="列名未覆盖",
+                message=f"缺少必需字段 {field_name}，请在列名规则中新增对应别名",
+                headers=headers,
+                field_name=field_name,
+            )
+        )
+
+    mapped_columns = set(column_map.values())
+    color_column_indexes = {column_index for column_index, _ in color_columns}
+    for column_index, original_column in enumerate(headers):
+        if not original_column or column_index in mapped_columns or column_index in color_column_indexes:
+            continue
+        issue_rows.append(
+            issue_row(
+                issue_type="列名未覆盖",
+                message="该原始列名未被列名规则映射，会作为原始列保留但不参与评分筛选",
+                headers=headers,
+                field_name="",
+                original_column=original_column,
+            )
+        )
+
+    if missing_columns:
+        if log:
+            log(f"{log_prefix}缺少必需字段: {', '.join(missing_columns)}，跳过")
+        return SheetProcessResult(
+            normal_frame=pd.DataFrame(columns=[*headers, "得分", "与基差差距"]),
+            issue_frame=pd.DataFrame(issue_rows),
+        )
+
+    body = raw_frame.iloc[header_row + 1 :].reset_index(drop=True)
+    processed_rows: list[ProcessedRow] = []
+
+    for body_index, row in body.iterrows():
+        excel_row_number = header_row + body_index + 2
+        basis_value = row.iloc[column_map["基差"]]
+        if pd.isna(parse_float(basis_value, default=float("nan"))):
+            if not is_empty_cell(basis_value):
+                issue_rows.append(
+                    issue_row(
+                        issue_type="数据未识别",
+                        message="基差无法解析为数字，该行不会参与筛选",
+                        headers=headers,
+                        raw_row=row,
+                        excel_row_number=excel_row_number,
+                        field_name="基差",
+                        original_column=headers[column_map["基差"]],
+                        original_value=basis_value,
+                    )
+                )
+            continue
+
+        record = build_record(row, column_map, color_columns, rule_set)
+        if record is None:
+            continue
+
+        processed_rows.append(
+            ProcessedRow(
+                record=record,
+                raw_row=row,
+                excel_row_number=excel_row_number,
+            )
+        )
+
+        for field_name, column_index in column_map.items():
+            if field_name == "颜色级" and color_columns:
+                continue
+            value = row.iloc[column_index]
+            if value_is_covered_by_alias(rule_set, field_name, value):
+                continue
+            issue_rows.append(
+                issue_row(
+                    issue_type="数据规则未覆盖",
+                    message=f"{field_name} 的值未命中值别名规则，请在数据规则中新增匹配值",
+                    headers=headers,
+                    raw_row=row,
+                    excel_row_number=excel_row_number,
+                    field_name=field_name,
+                    original_column=headers[column_index],
+                    original_value=value,
+                )
+            )
+
+    normal_frame = format_original_output_frame(processed_rows, headers, rule_set)
+    if log:
+        log(f"{log_prefix}数据行 {len(body)} 行，有效基差行 {len(processed_rows)} 行")
+        log(f"{log_prefix}命中筛选条件 {len(normal_frame)} 行")
+    return SheetProcessResult(
+        normal_frame=normal_frame,
+        issue_frame=pd.DataFrame(issue_rows),
+    )
+
+
 def filter_file(src: Path, dst: Path, log: ProgressLogger | None = None) -> int:
     """处理单个 Excel 文件，返回保留行数。"""
 
     if log:
         log(f"读取工作簿: {src.name}")
     sheet_results: list[pd.DataFrame] = []
+    issue_results: list[pd.DataFrame] = []
 
     with pd.ExcelFile(src) as excel_file:
         if log:
@@ -238,20 +541,35 @@ def filter_file(src: Path, dst: Path, log: ProgressLogger | None = None) -> int:
             raw_frame = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
             if log:
                 log(f"[{sheet_name}] 原始尺寸: {len(raw_frame)} 行 x {len(raw_frame.columns)} 列")
-            result = process_sheet(raw_frame, log=log, sheet_name=sheet_name)
-            if result is None:
-                continue
+            result = process_sheet_result(raw_frame, log=log, sheet_name=sheet_name)
 
-            result.insert(0, "来源sheet", sheet_name)
-            sheet_results.append(result)
+            if len(result.normal_frame):
+                result.normal_frame.insert(0, "来源sheet", sheet_name)
+                sheet_results.append(result.normal_frame)
+            if len(result.issue_frame):
+                result.issue_frame.insert(0, "来源sheet", sheet_name)
+                issue_results.append(result.issue_frame)
 
-    if not sheet_results:
+    if not sheet_results and not issue_results:
         if log:
             log("当前文件没有命中结果，不生成输出文件")
         return 0
 
-    output_frame = pd.concat(sheet_results, ignore_index=True)
+    output_frame = (
+        pd.concat(sheet_results, ignore_index=True)
+        if sheet_results
+        else pd.DataFrame()
+    )
+    issue_frame = (
+        pd.concat(issue_results, ignore_index=True)
+        if issue_results
+        else pd.DataFrame(columns=["来源sheet", *ISSUE_COLUMNS])
+    )
     if log:
-        log(f"写出结果: {dst.name}，共 {len(output_frame)} 行")
-    output_frame.to_excel(dst, index=False)
+        log(
+            f"写出结果: {dst.name}，筛选 {len(output_frame)} 行，识别异常 {len(issue_frame)} 条"
+        )
+    with pd.ExcelWriter(dst) as writer:
+        output_frame.to_excel(writer, sheet_name="筛选结果", index=False)
+        issue_frame.to_excel(writer, sheet_name="识别异常", index=False)
     return len(output_frame)

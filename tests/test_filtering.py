@@ -4,10 +4,11 @@ import unittest
 import os
 import sqlite3
 from tempfile import TemporaryDirectory
+from pathlib import Path
 
 import pandas as pd
 
-from cotton_filter_app.processor import process_sheet
+from cotton_filter_app.processor import filter_file, process_sheet
 from cotton_filter_app.scoring import extract_max_color_percent, parse_float, score_record
 from cotton_filter_app.rules import (
     RULE_DB_ENV,
@@ -331,6 +332,50 @@ class FilteringRulesTest(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result["批号"].tolist(), ["A006"])
+
+    def test_filter_file_writes_result_and_issue_sheets_with_original_columns(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "value_alias",
+                "match_value": "A",
+                "output_value": "A",
+                "enabled": True,
+            }
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "resource.xlsx"
+            output = root / "result.xlsx"
+            frame = pd.DataFrame(
+                [
+                    ["批号", "基差", "长度", "马值", "未配置列"],
+                    ["A009", 350, 29.5, "4.1(A)", "原始备注"],
+                    ["A010", 350, 29.5, "4.1(Z)", "异常备注"],
+                ]
+            )
+            frame.to_excel(source, index=False, header=False)
+
+            kept = filter_file(source, output)
+
+            self.assertEqual(kept, 2)
+            workbook = pd.read_excel(output, sheet_name=None)
+            self.assertIn("筛选结果", workbook)
+            self.assertIn("识别异常", workbook)
+
+            result_frame = workbook["筛选结果"]
+            self.assertIn("未配置列", result_frame.columns)
+            self.assertIn("得分", result_frame.columns)
+            self.assertEqual(result_frame.loc[0, "马值"], "4.1(A)")
+            self.assertEqual(result_frame.loc[0, "未配置列"], "原始备注")
+
+            issue_frame = workbook["识别异常"]
+            self.assertIn("列名未覆盖", issue_frame["异常类型"].tolist())
+            self.assertIn("数据规则未覆盖", issue_frame["异常类型"].tolist())
+            self.assertIn("未配置列", issue_frame["原列名"].fillna("").tolist())
+            self.assertIn("4.1(Z)", issue_frame["原值"].fillna("").tolist())
 
 
 if __name__ == "__main__":

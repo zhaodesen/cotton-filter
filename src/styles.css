@@ -966,6 +966,20 @@ select:focus {
   border-bottom: 1px solid var(--border);
 }
 
+.rules-transfer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.rules-transfer-actions .ghost-button {
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 12px;
+}
+
 .icon-button {
   width: 34px;
   min-height: 34px;

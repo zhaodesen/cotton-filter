@@ -51,6 +51,12 @@ export interface RulesResponse {
   data_rules: DataRule[];
 }
 
+export interface RuleFileResponse {
+  path: string;
+  column_rules: number;
+  data_rules: number;
+}
+
 export interface ColumnRulePayload {
   field_name?: string;
   alias?: string;
@@ -235,4 +241,18 @@ export function deleteDataRule(
   ruleId: number,
 ): Promise<void> {
   return deleteJson(baseUrl, `/api/rules/data/${ruleId}`);
+}
+
+export function exportRules(
+  baseUrl: string,
+  path: string,
+): Promise<RuleFileResponse> {
+  return postJson(baseUrl, "/api/rules/export", { path });
+}
+
+export function importRules(
+  baseUrl: string,
+  path: string,
+): Promise<RuleFileResponse> {
+  return postJson(baseUrl, "/api/rules/import", { path });
 }
