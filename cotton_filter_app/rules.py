@@ -286,7 +286,7 @@ def default_column_rules() -> list[ColumnRule]:
 
 
 def default_data_rules() -> list[DataRule]:
-    """把旧版硬编码数据识别、评分和筛选阈值作为初始数据库规则。"""
+    """初始化颜色级值别名，便于新库直接识别常见颜色级写法。"""
 
     rules: list[DataRule] = []
     order = 0

@@ -27,13 +27,7 @@ def is_color_grade_label(value: object, rule_set: RuleSet | None = None) -> bool
     """判断组合表头中的子列是否是颜色级标签。"""
 
     active_rule_set = rule_set or load_ruleset()
-    if active_rule_set.is_value_alias("颜色级", value):
-        return True
-
-    text = normalize_text(value)
-    if not text or text in {"无", "--"}:
-        return False
-    return False
+    return active_rule_set.is_value_alias("颜色级", value)
 
 
 def detect_color_columns(
@@ -114,7 +108,6 @@ def build_record(
         if color_summary:
             record["颜色级"] = color_summary
 
-    record["_基差"] = basis
     record["_得分"] = score_record(record, rule_set=active_rule_set)
     record["_与基差差距"] = basis - record["_得分"]
 
