@@ -1,4 +1,4 @@
-import { ChevronDown, Plus, X } from "lucide-react";
+import { Columns3, Plus, SlidersHorizontal, Tags, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
@@ -31,6 +31,8 @@ interface DataRuleForm {
   sort_order: string;
   notes: string;
 }
+
+type RulesPanel = "columns" | "aliases" | "intervals";
 
 const DEFAULT_STANDARD_FIELDS = [
   "基差",
@@ -163,8 +165,7 @@ export default function RulesView({
   const [aliasValue, setAliasValue] = useState("");
   const [dataDialogField, setDataDialogField] = useState<string | null>(null);
   const [detailRule, setDetailRule] = useState<DataRule | null>(null);
-  const [openColumn, setOpenColumn] = useState(true);
-  const [openData, setOpenData] = useState(true);
+  const [activePanel, setActivePanel] = useState<RulesPanel>("columns");
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState("");
 
@@ -394,21 +395,46 @@ export default function RulesView({
     <section className="rules-view">
       {errorText ? <div className="rules-error">{errorText}</div> : null}
 
-      <div className="rules-grid">
-        <section className="rules-pane">
+      <div className="rules-layout">
+        <aside className="rules-sidebar" aria-label="规则维护菜单">
           <button
-            className="pane-header pane-toggle"
+            className={activePanel === "columns" ? "rules-menu-item active" : "rules-menu-item"}
             type="button"
-            aria-expanded={openColumn}
-            onClick={() => setOpenColumn((value) => !value)}
+            onClick={() => setActivePanel("columns")}
           >
-            <h2>列名规则</h2>
-            <ChevronDown
-              className={openColumn ? "pane-chevron" : "pane-chevron collapsed"}
-              size={18}
-            />
+            <Columns3 size={16} />
+            <span>列名规则</span>
           </button>
-          {openColumn ? (
+          <div className="rules-menu-heading">数据规则</div>
+          <button
+            className={activePanel === "aliases" ? "rules-menu-item active" : "rules-menu-item"}
+            type="button"
+            onClick={() => setActivePanel("aliases")}
+          >
+            <Tags size={16} />
+            <span>值别名</span>
+          </button>
+          <button
+            className={activePanel === "intervals" ? "rules-menu-item active" : "rules-menu-item"}
+            type="button"
+            onClick={() => setActivePanel("intervals")}
+          >
+            <SlidersHorizontal size={16} />
+            <span>评分与过滤区间</span>
+          </button>
+        </aside>
+
+        <section className="rules-pane rules-content-pane">
+          <div className="pane-header">
+            <h2>
+              {activePanel === "columns"
+                ? "列名规则"
+                : activePanel === "aliases"
+                  ? "值别名"
+                  : "评分与过滤区间"}
+            </h2>
+          </div>
+          {activePanel === "columns" ? (
             <div className="field-rule-list">
               {columnFields.map((fieldName) => {
                 const aliases = columnRulesByField.get(fieldName) || [];
@@ -449,154 +475,132 @@ export default function RulesView({
               })}
             </div>
           ) : null}
-        </section>
-
-        <section className="rules-pane">
-          <button
-            className="pane-header pane-toggle"
-            type="button"
-            aria-expanded={openData}
-            onClick={() => setOpenData((value) => !value)}
-          >
-            <h2>数据规则</h2>
-            <ChevronDown
-              className={openData ? "pane-chevron" : "pane-chevron collapsed"}
-              size={18}
-            />
-          </button>
-          {openData ? (
-            <div className="data-rule-sections">
-              <div className="data-rule-section">
-                <h3>值别名</h3>
-                <div className="field-rule-list">
-                  {dataFields.map((fieldName) => {
-                    const rules = valueAliasRulesByField.get(fieldName) || [];
-                    return (
-                      <div
-                        className="field-rule-row data-rule-row"
-                        key={`alias-${fieldName}`}
-                      >
-                        <strong className="field-rule-name">{fieldName}</strong>
-                        <div className="rule-pill-list alias-rule-group-list">
-                          {rules.length === 0 ? (
-                            <span className="alias-empty">暂无别名</span>
-                          ) : (
-                            groupAliasRulesByOutput(rules).map(([outputValue, groupedRules]) => (
-                              <div className="alias-rule-group" key={outputValue}>
-                                <div className="alias-rule-group-title">
-                                  {outputValue}
-                                </div>
-                                <div className="alias-rule-group-items">
-                                  {groupedRules.map((rule) => (
-                                    <div className="rule-pill" key={rule.id}>
-                                      <button
-                                        className="rule-pill-body rule-pill-view"
-                                        type="button"
-                                        title="查看规则详情"
-                                        onClick={() => setDetailRule(rule)}
-                                      >
-                                        <span className="rule-pill-meta">
-                                          {rule.match_value}
-                                        </span>
-                                      </button>
-                                      <button
-                                        className="chip-delete"
-                                        type="button"
-                                        title="删除别名"
-                                        onClick={() => removeData(rule)}
-                                        disabled={isSaving}
-                                      >
-                                        <X size={14} />
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        <button
-                          className="alias-add-button"
-                          type="button"
-                          title={`为 ${fieldName} 新增值别名`}
-                          onClick={() => openDataDialog(fieldName, "value_alias")}
-                          disabled={
-                            !backendReady ||
-                            isSaving ||
-                            aliasOutputValues(valueAliasRulesByField.get(fieldName) || [])
-                              .length === 0
-                          }
-                        >
-                          <Plus size={15} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="data-rule-section">
-                <h3>评分与过滤区间</h3>
-                <div className="field-rule-list">
-                  {dataFields.map((fieldName) => {
-                    const rules = intervalRulesByField.get(fieldName) || [];
-                    return (
-                      <div
-                        className="field-rule-row data-rule-row"
-                        key={`range-${fieldName}`}
-                      >
-                        <strong className="field-rule-name">{fieldName}</strong>
-                        <div className="rule-pill-list">
-                          {rules.length === 0 ? (
-                            <span className="alias-empty">暂无区间</span>
-                          ) : (
-                            rules.map((rule) => (
-                              <div className="rule-pill" key={rule.id}>
-                                <button
-                                  className="rule-pill-body rule-pill-view"
-                                  type="button"
-                                  title="查看规则详情"
-                                  onClick={() => setDetailRule(rule)}
-                                >
-                                  <span className="rule-pill-top">
-                                    <span className="rule-pill-tag">
-                                      {RULE_TYPE_LABELS[rule.rule_type]}
-                                    </span>
-                                  </span>
-                                  <span
-                                    className="rule-pill-meta"
-                                    title={ruleSummary(rule)}
+          {activePanel === "aliases" ? (
+            <div className="field-rule-list">
+              {dataFields.map((fieldName) => {
+                const rules = valueAliasRulesByField.get(fieldName) || [];
+                return (
+                  <div
+                    className="field-rule-row data-rule-row"
+                    key={`alias-${fieldName}`}
+                  >
+                    <strong className="field-rule-name">{fieldName}</strong>
+                    <div className="rule-pill-list alias-rule-group-list">
+                      {rules.length === 0 ? (
+                        <span className="alias-empty">暂无别名</span>
+                      ) : (
+                        groupAliasRulesByOutput(rules).map(([outputValue, groupedRules]) => (
+                          <div className="alias-rule-group" key={outputValue}>
+                            <div className="alias-rule-group-title">
+                              {outputValue}
+                            </div>
+                            <div className="alias-rule-group-items">
+                              {groupedRules.map((rule) => (
+                                <div className="rule-pill" key={rule.id}>
+                                  <button
+                                    className="rule-pill-body rule-pill-view"
+                                    type="button"
+                                    title="查看规则详情"
+                                    onClick={() => setDetailRule(rule)}
                                   >
-                                    {ruleDetail(rule)}
-                                  </span>
-                                </button>
-                                <button
-                                  className="chip-delete"
-                                  type="button"
-                                  title="删除区间"
-                                  onClick={() => removeData(rule)}
-                                  disabled={isSaving}
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                        <button
-                          className="alias-add-button"
-                          type="button"
-                          title={`为 ${fieldName} 新增区间`}
-                          onClick={() => openDataDialog(fieldName, "score_range")}
-                          disabled={!backendReady || isSaving}
-                        >
-                          <Plus size={15} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                                    <span className="rule-pill-meta">
+                                      {rule.match_value}
+                                    </span>
+                                  </button>
+                                  <button
+                                    className="chip-delete"
+                                    type="button"
+                                    title="删除别名"
+                                    onClick={() => removeData(rule)}
+                                    disabled={isSaving}
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      className="alias-add-button"
+                      type="button"
+                      title={`为 ${fieldName} 新增值别名`}
+                      onClick={() => openDataDialog(fieldName, "value_alias")}
+                      disabled={!backendReady || isSaving}
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+          {activePanel === "intervals" ? (
+            <div className="field-rule-list">
+              {dataFields.map((fieldName) => {
+                const rules = intervalRulesByField.get(fieldName) || [];
+                return (
+                  <div
+                    className="field-rule-row data-rule-row"
+                    key={`range-${fieldName}`}
+                  >
+                    <strong className="field-rule-name">{fieldName}</strong>
+                    <div className="rule-pill-list">
+                      {rules.length === 0 ? (
+                        <span className="alias-empty">暂无区间</span>
+                      ) : (
+                        rules.map((rule) => (
+                          <div className="rule-pill" key={rule.id}>
+                            <button
+                              className="rule-pill-body rule-pill-view"
+                              type="button"
+                              title="查看规则详情"
+                              onClick={() => setDetailRule(rule)}
+                            >
+                              <span className="rule-pill-top">
+                                <span className="rule-pill-tag">
+                                  {RULE_TYPE_LABELS[rule.rule_type]}
+                                </span>
+                              </span>
+                              <span
+                                className="rule-pill-meta"
+                                title={ruleSummary(rule)}
+                              >
+                                {ruleDetail(rule)}
+                              </span>
+                            </button>
+                            <button
+                              className="chip-delete"
+                              type="button"
+                              title="删除区间"
+                              onClick={() => removeData(rule)}
+                              disabled={isSaving}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <button
+                      className="alias-add-button"
+                      type="button"
+                      title={`为 ${fieldName} 新增区间`}
+                      onClick={() => openDataDialog(fieldName, "score_range")}
+                      disabled={
+                        !backendReady ||
+                        isSaving ||
+                        aliasOutputValues(valueAliasRulesByField.get(fieldName) || [])
+                          .length === 0
+                      }
+                    >
+                      <Plus size={15} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
         </section>
