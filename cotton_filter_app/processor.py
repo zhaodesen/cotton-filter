@@ -131,9 +131,9 @@ def format_output_frame(
     frame = pd.DataFrame(records)
     filter_rules = active_rule_set.filter_rules()
     if filter_rules:
-        mask = pd.Series(False, index=frame.index)
+        mask = pd.Series(True, index=frame.index)
         for rule in filter_rules:
-            mask = mask | frame.apply(
+            mask = mask & frame.apply(
                 lambda row: filter_rule_matches(row, rule, active_rule_set),
                 axis=1,
             )
@@ -233,23 +233,24 @@ def filter_file(src: Path, dst: Path, log: ProgressLogger | None = None) -> int:
 
     if log:
         log(f"读取工作簿: {src.name}")
-    excel_file = pd.ExcelFile(src)
-    if log:
-        log(f"发现 {len(excel_file.sheet_names)} 个 sheet: {', '.join(excel_file.sheet_names)}")
     sheet_results: list[pd.DataFrame] = []
 
-    for sheet_name in excel_file.sheet_names:
+    with pd.ExcelFile(src) as excel_file:
         if log:
-            log(f"开始读取 sheet: {sheet_name}")
-        raw_frame = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
-        if log:
-            log(f"[{sheet_name}] 原始尺寸: {len(raw_frame)} 行 x {len(raw_frame.columns)} 列")
-        result = process_sheet(raw_frame, log=log, sheet_name=sheet_name)
-        if result is None:
-            continue
+            log(f"发现 {len(excel_file.sheet_names)} 个 sheet: {', '.join(excel_file.sheet_names)}")
 
-        result.insert(0, "来源sheet", sheet_name)
-        sheet_results.append(result)
+        for sheet_name in excel_file.sheet_names:
+            if log:
+                log(f"开始读取 sheet: {sheet_name}")
+            raw_frame = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
+            if log:
+                log(f"[{sheet_name}] 原始尺寸: {len(raw_frame)} 行 x {len(raw_frame.columns)} 列")
+            result = process_sheet(raw_frame, log=log, sheet_name=sheet_name)
+            if result is None:
+                continue
+
+            result.insert(0, "来源sheet", sheet_name)
+            sheet_results.append(result)
 
     if not sheet_results:
         if log:

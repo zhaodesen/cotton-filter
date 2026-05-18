@@ -43,6 +43,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [backendReady, setBackendReady] = useState(false);
   const backendRef = useRef<BackendService | null>(null);
+  const filesRef = useRef<string[]>([]);
 
   function appendLog(message: string) {
     setLogs((current) => [...current, message]);
@@ -124,10 +125,17 @@ export default function App() {
       return;
     }
     const response = await expandTargets(apiBase, targets);
-    const nextFiles = mergeUnique(files, response.files);
+    const existingFiles = new Set(filesRef.current);
+    const newFiles = response.files.filter((file) => !existingFiles.has(file));
+    if (!newFiles.length) {
+      appendLog("未发现新的 Excel 文件");
+      return;
+    }
+    const nextFiles = mergeUnique(filesRef.current, newFiles);
+    filesRef.current = nextFiles;
     setFiles(nextFiles);
-    appendLog(`已加入 ${response.files.length} 个 Excel 文件`);
-    await runFilterFor(nextFiles);
+    appendLog(`已加入 ${newFiles.length} 个 Excel 文件`);
+    await runFilterFor(newFiles);
   }
 
   async function selectFiles() {

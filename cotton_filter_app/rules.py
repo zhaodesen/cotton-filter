@@ -407,6 +407,7 @@ class RuleRepository:
             connection.commit()
             self.seed_defaults(connection, force=False)
             self.normalize_color_grade_aliases(connection)
+            self.delete_legacy_interval_rules(connection)
             connection.commit()
 
     def seed_defaults(

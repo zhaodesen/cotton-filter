@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 import os
+import sqlite3
 from tempfile import TemporaryDirectory
 
 import pandas as pd
@@ -189,6 +190,33 @@ class FilteringRulesTest(unittest.TestCase):
             ]
         )
 
+    def test_legacy_interval_rules_are_removed_from_existing_database(self) -> None:
+        repository = RuleRepository()
+        repository.initialize()
+        with sqlite3.connect(os.environ[RULE_DB_ENV]) as connection:
+            connection.execute(
+                """
+                INSERT INTO data_rules
+                (field_name, rule_name, rule_type, match_value, match_key,
+                 min_value, max_value, min_inclusive, max_inclusive, score_delta,
+                 output_value, enabled, sort_order, notes, created_at, updated_at)
+                VALUES ('马值', '旧无适用值评分', 'score_range', '', '',
+                        NULL, 4.2, 1, 1, 25, '', 1, 0, '', 'now', 'now')
+                """
+            )
+            connection.commit()
+
+        repository.initialize()
+        rules = repository.load_ruleset().enabled_data_rules()
+
+        self.assertFalse(
+            [
+                rule
+                for rule in rules
+                if rule.rule_name == "旧无适用值评分"
+            ]
+        )
+
     def test_range_rule_requires_alias_output_value(self) -> None:
         repository = RuleRepository()
         with self.assertRaisesRegex(ValueError, "区间规则必须选择适用值"):
@@ -259,6 +287,50 @@ class FilteringRulesTest(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result["批号"].tolist(), ["A004"])
+
+    def test_multiple_filter_rules_must_all_match(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "仓库",
+                "rule_type": "keyword_filter",
+                "match_value": "上海",
+                "enabled": True,
+            }
+        )
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "value_alias",
+                "match_value": "A",
+                "output_value": "A",
+                "enabled": True,
+            }
+        )
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "filter_range",
+                "match_value": "A",
+                "min_value": 4.0,
+                "max_value": 4.2,
+                "enabled": True,
+            }
+        )
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "仓库"],
+                ["A006", 350, 29.5, "4.1(A)", "上海一号库"],
+                ["A007", 350, 29.5, "4.8(A)", "上海一号库"],
+                ["A008", 350, 29.5, "4.1(A)", "青岛库"],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["批号"].tolist(), ["A006"])
 
 
 if __name__ == "__main__":
