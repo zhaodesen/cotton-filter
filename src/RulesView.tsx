@@ -857,7 +857,7 @@ export default function RulesView({
                         match_value: event.target.value,
                       }))
                     }
-                    placeholder="命中该关键词则保留"
+                    placeholder="命中该关键词则过滤出去"
                   />
                 </label>
               ) : null}

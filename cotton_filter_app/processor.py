@@ -320,13 +320,35 @@ def build_filter_mask(
     if not filter_rules:
         return pd.Series(True, index=frame.index)
 
+    keyword_rules = [
+        rule for rule in filter_rules if rule.rule_type == "keyword_filter"
+    ]
+    range_rules = [
+        rule for rule in filter_rules if rule.rule_type != "keyword_filter"
+    ]
+
+    excluded = pd.Series(False, index=frame.index)
+    for rule in keyword_rules:
+        rule_excluded = frame.apply(
+            lambda row: filter_rule_matches(row, rule, rule_set),
+            axis=1,
+        )
+        excluded = excluded | rule_excluded
+
+    if not range_rules:
+        return ~excluded
+
     grouped: dict[str, list[DataRule]] = {}
-    for rule in filter_rules:
+    for rule in range_rules:
         grouped.setdefault(rule.field_name, []).append(rule)
 
-    mask = pd.Series(True, index=frame.index)
+    mask = ~excluded
     for field_rules in grouped.values():
-        field_mask = frame.apply(
+        candidate_frame = frame[mask]
+        if candidate_frame.empty:
+            return mask
+        field_mask = pd.Series(False, index=frame.index)
+        field_mask.loc[candidate_frame.index] = candidate_frame.apply(
             lambda row: any(
                 filter_rule_matches(row, rule, rule_set) for rule in field_rules
             ),
@@ -387,7 +409,10 @@ def filter_rule_matches(
     rule: DataRule,
     rule_set: RuleSet,
 ) -> bool:
-    """判断单条记录是否命中过滤规则。"""
+    """判断单条记录是否命中过滤规则。
+
+    关键词过滤是排除规则：返回 True 表示该行需要过滤出去。
+    """
 
     source_value = row.get(rule.field_name)
     if rule.rule_type == "keyword_filter":

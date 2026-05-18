@@ -295,13 +295,13 @@ class FilteringRulesTest(unittest.TestCase):
         self.assertEqual(rule.min_value, 80.0)
         self.assertEqual(rule.max_value, 95.0)
 
-    def test_keyword_filter_keeps_matching_rows(self) -> None:
+    def test_keyword_filter_excludes_matching_rows(self) -> None:
         repository = RuleRepository()
         repository.create_data_rule(
             {
                 "field_name": "颜色级",
                 "rule_type": "keyword_filter",
-                "match_value": "白棉3级",
+                "match_value": "黄",
                 "enabled": True,
             }
         )
@@ -309,7 +309,7 @@ class FilteringRulesTest(unittest.TestCase):
             [
                 ["批号", "基差", "长度", "马值", "颜色级"],
                 ["A004", 350, 29.5, 4.1, "31"],
-                ["A005", 350, 29.5, 4.1, "41"],
+                ["A005", 350, 29.5, 4.1, "黄染棉1级"],
             ]
         )
 
@@ -325,7 +325,7 @@ class FilteringRulesTest(unittest.TestCase):
             {
                 "field_name": "颜色级",
                 "rule_type": "keyword_filter",
-                "match_value": "白棉3级",
+                "match_value": "黄",
                 "enabled": True,
             }
         )
@@ -343,7 +343,7 @@ class FilteringRulesTest(unittest.TestCase):
                 ["批号", "基差", "长度", "马值", "颜色级"],
                 ["A006", 350, 29.5, "4.1(A)", "31"],
                 ["A007", 350, 29.5, "4.8(A)", "31"],
-                ["A008", 350, 29.5, "4.1(A)", "41"],
+                ["A008", 350, 29.5, "4.1(A)", "黄染棉1级"],
             ]
         )
 
