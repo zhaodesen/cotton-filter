@@ -766,6 +766,10 @@ class RuleRepository:
     def _optional_float(value: Any) -> float | None:
         if value in (None, ""):
             return None
+        if isinstance(value, str):
+            value = value.strip().removesuffix("%").removesuffix("％").strip()
+            if not value:
+                return None
         return float(value)
 
     @staticmethod

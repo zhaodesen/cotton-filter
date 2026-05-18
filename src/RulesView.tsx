@@ -81,13 +81,13 @@ function formatError(error: unknown): string {
 }
 
 function optionalNumber(value: string): number | null {
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(/[%％]$/, "").trim();
   if (!trimmed) {
     return null;
   }
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed)) {
-    throw new Error("数值格式不正确");
+    throw new Error("数值格式不正确，请输入数字或百分比");
   }
   return parsed;
 }
@@ -787,7 +787,7 @@ export default function RulesView({
                           }))
                         }
                         inputMode="decimal"
-                        placeholder="不限"
+                        placeholder="不限，支持 80 或 80%"
                       />
                     </label>
                     <label>
@@ -801,7 +801,7 @@ export default function RulesView({
                           }))
                         }
                         inputMode="decimal"
-                        placeholder="不限"
+                        placeholder="不限，支持 80 或 80%"
                       />
                     </label>
                   </div>

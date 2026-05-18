@@ -212,6 +212,30 @@ class FilteringRulesTest(unittest.TestCase):
                 }
             )
 
+    def test_range_rule_accepts_percent_boundaries(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "颜色级",
+                "rule_type": "score_range",
+                "match_value": "白棉3级",
+                "min_value": "80%",
+                "max_value": "95％",
+                "score_delta": 25,
+            }
+        )
+
+        rule = [
+            item
+            for item in repository.load_ruleset().enabled_data_rules()
+            if item.field_name == "颜色级"
+            and item.rule_type == "score_range"
+            and item.score_delta == 25
+        ][0]
+
+        self.assertEqual(rule.min_value, 80.0)
+        self.assertEqual(rule.max_value, 95.0)
+
     def test_keyword_filter_keeps_matching_rows(self) -> None:
         repository = RuleRepository()
         repository.create_data_rule(

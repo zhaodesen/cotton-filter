@@ -91,8 +91,8 @@ class DataRulePayload(BaseModel):
     rule_name: str | None = None
     rule_type: str | None = None
     match_value: str | None = None
-    min_value: float | None = None
-    max_value: float | None = None
+    min_value: float | str | None = None
+    max_value: float | str | None = None
     min_inclusive: bool | None = None
     max_inclusive: bool | None = None
     score_delta: int | None = None
