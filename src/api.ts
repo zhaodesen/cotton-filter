@@ -31,7 +31,7 @@ export interface DataRule {
   id: number;
   field_name: string;
   rule_name: string;
-  rule_type: "value_alias" | "score_range" | "filter_range";
+  rule_type: "value_alias" | "score_range" | "filter_range" | "keyword_filter";
   match_value: string;
   match_key: string;
   min_value: number | null;
@@ -62,7 +62,7 @@ export interface ColumnRulePayload {
 export interface DataRulePayload {
   field_name?: string;
   rule_name?: string;
-  rule_type?: "value_alias" | "score_range" | "filter_range";
+  rule_type?: "value_alias" | "score_range" | "filter_range" | "keyword_filter";
   match_value?: string;
   min_value?: number | null;
   max_value?: number | null;

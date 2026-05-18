@@ -19,7 +19,7 @@ DATA_RULE_TABLE = "data_rules"
 METADATA_TABLE = "rule_metadata"
 RULE_DB_ENV = "COTTON_FILTER_RULE_DB"
 DEFAULT_DB_NAME = "rules.sqlite3"
-DATA_RULE_TYPES = {"value_alias", "score_range", "filter_range"}
+DATA_RULE_TYPES = {"value_alias", "score_range", "filter_range", "keyword_filter"}
 DEFAULT_SEEDED_KEY = "default_rules_seeded"
 DEFAULT_REQUIRED_FIELDS = ("基差", "长度", "马值")
 DEFAULT_OUTPUT_FIELDS = (
@@ -32,7 +32,22 @@ DEFAULT_OUTPUT_FIELDS = (
     "马值",
     "整齐度",
     "颜色级",
+    "仓库",
 )
+COLOR_GRADE_PREFIXES = ("白棉", "淡点污棉", "淡黄染棉", "黄染棉")
+COLOR_GRADE_PREFIX_BY_CODE = {
+    "1": "白棉",
+    "2": "淡点污棉",
+    "3": "淡黄染棉",
+    "4": "黄染棉",
+}
+CHINESE_GRADE_TO_NUMBER = {
+    "一": "1",
+    "二": "2",
+    "三": "3",
+    "四": "4",
+    "五": "5",
+}
 
 
 @dataclass(frozen=True)
@@ -97,15 +112,42 @@ class RuleSet:
         return sorted(matches, key=lambda rule: (rule.sort_order, rule.id or 0))
 
     def is_value_alias(self, field_name: str, value: Any) -> bool:
+        return self.value_alias_output(field_name, value) is not None
+
+    def value_alias_output(self, field_name: str, value: Any) -> str | None:
+        """返回字段值别名对应的标准输出值。"""
+
+        value_key = normalize_text(value)
+        if not value_key:
+            return None
+
+        for rule in self.enabled_data_rules():
+            if (
+                rule.rule_type == "value_alias"
+                and rule.field_name == field_name
+                and rule.match_key == value_key
+            ):
+                return rule.output_value or rule.match_value
+        return None
+
+    def rule_matches_value(self, rule: DataRule, value: Any) -> bool:
+        """判断区间规则是否适用于当前字段值。"""
+
+        if not rule.match_key:
+            return True
+
         value_key = normalize_text(value)
         if not value_key:
             return False
+        if value_key == rule.match_key or rule.match_key in value_key:
+            return True
 
         return any(
-            rule.rule_type == "value_alias"
-            and rule.field_name == field_name
-            and rule.match_key == value_key
-            for rule in self.enabled_data_rules()
+            alias.rule_type == "value_alias"
+            and alias.field_name == rule.field_name
+            and alias.match_key == value_key
+            and normalize_text(alias.output_value) == rule.match_key
+            for alias in self.enabled_data_rules()
         )
 
     def score_rules(self) -> tuple[DataRule, ...]:
@@ -119,7 +161,7 @@ class RuleSet:
         return tuple(
             rule
             for rule in self.enabled_data_rules()
-            if rule.rule_type == "filter_range"
+            if rule.rule_type in {"filter_range", "keyword_filter"}
         )
 
 
@@ -146,6 +188,38 @@ def sys_platform() -> str:
     import sys
 
     return sys.platform
+
+
+def standard_color_grade_value(value: Any) -> str:
+    """把颜色级别名归一成标准颜色级值。"""
+
+    text = str(value or "").strip().replace(" ", "")
+    if not text:
+        return ""
+
+    if text.isdigit():
+        if len(text) == 1 and text in {"1", "2", "3", "4", "5"}:
+            return f"白棉{text}级"
+        if len(text) == 2:
+            grade = text[0]
+            prefix = COLOR_GRADE_PREFIX_BY_CODE.get(text[1])
+            if prefix and grade in {"1", "2", "3", "4", "5"}:
+                return f"{prefix}{grade}级"
+
+    normalized = text
+    for chinese_grade, number_grade in CHINESE_GRADE_TO_NUMBER.items():
+        normalized = normalized.replace(f"{chinese_grade}级", f"{number_grade}级")
+
+    for prefix in COLOR_GRADE_PREFIXES:
+        for grade in ("1", "2", "3", "4", "5"):
+            if normalized == f"{prefix}{grade}级":
+                return normalized
+
+    for grade in ("1", "2", "3", "4", "5"):
+        if normalized in {f"{grade}级", f"{grade}级棉", f"{grade}级皮棉"}:
+            return f"白棉{grade}级"
+
+    return text
 
 
 def utc_now() -> str:
@@ -191,6 +265,7 @@ def default_column_rules() -> list[ColumnRule]:
         ],
         "整齐度": ["整齐度", "长整", "整齐度指数", "长度整齐度", "平均整齐度"],
         "批号": ["批号"],
+        "仓库": ["仓库", "仓储地", "库点", "存放仓库"],
     }
 
     rules: list[ColumnRule] = []
@@ -237,7 +312,7 @@ def default_data_rules() -> list[DataRule]:
             53,
         )
     )
-    prefixes = ("", "白棉", "淡点污棉", "淡黄染棉", "黄染棉")
+    prefixes = ("", *COLOR_GRADE_PREFIXES)
     grade_labels = (("一", "1"), ("二", "2"), ("三", "3"), ("四", "4"), ("五", "5"))
     for prefix in prefixes:
         for chinese_grade, number_grade in grade_labels:
@@ -258,37 +333,9 @@ def default_data_rules() -> list[DataRule]:
                 rule_type="value_alias",
                 match_value=alias,
                 match_key=alias_key,
-                output_value=alias,
+                output_value=standard_color_grade_value(alias),
                 sort_order=order,
-                notes="匹配后按颜色级直接品级处理为 100%",
-            )
-        )
-        order += 1
-
-    score_rules = [
-        DataRule(None, "颜色级", "颜色级主体占比 >= 80 加 100", "score_range", min_value=80, score_delta=100),
-        DataRule(None, "长度", "长度 > 30 加 400", "score_range", min_value=30, min_inclusive=False, score_delta=400),
-        DataRule(None, "长度", "长度 29 到 30 加 150", "score_range", min_value=29, max_value=30, score_delta=150),
-        DataRule(None, "马值", "马值 < 4.2 加 100", "score_range", max_value=4.2, max_inclusive=False, score_delta=100),
-        DataRule(None, "马值", "马值 > 5 减 100", "score_range", min_value=5, min_inclusive=False, score_delta=-100),
-        DataRule(None, "整齐度", "整齐度 > 83 加 200", "score_range", min_value=83, min_inclusive=False, score_delta=200),
-        DataRule(None, "强力", "强力 > 31 加 250", "score_range", min_value=31, min_inclusive=False, score_delta=250),
-        DataRule(None, "强力", "强力 29 到 31 加 150", "score_range", min_value=29, max_value=31, score_delta=150),
-        DataRule(None, "与基差差距", "与基差差距 -100 到 100 保留", "filter_range", min_value=-100, max_value=100),
-    ]
-    for rule in score_rules:
-        rules.append(
-            DataRule(
-                id=None,
-                field_name=rule.field_name,
-                rule_name=rule.rule_name,
-                rule_type=rule.rule_type,
-                min_value=rule.min_value,
-                max_value=rule.max_value,
-                min_inclusive=rule.min_inclusive,
-                max_inclusive=rule.max_inclusive,
-                score_delta=rule.score_delta,
-                sort_order=order,
+                notes="匹配后归一为标准颜色级并按直接品级处理为 100%",
             )
         )
         order += 1
@@ -359,6 +406,8 @@ class RuleRepository:
             )
             connection.commit()
             self.seed_defaults(connection, force=False)
+            self.normalize_color_grade_aliases(connection)
+            connection.commit()
 
     def seed_defaults(
         self,
@@ -384,6 +433,40 @@ class RuleRepository:
         finally:
             if owns_connection:
                 active_connection.close()
+
+    def normalize_color_grade_aliases(self, connection: sqlite3.Connection) -> None:
+        """修复已有颜色级值别名，把输出值归一为标准值。"""
+
+        rows = connection.execute(
+            f"""
+            SELECT id, match_value, output_value
+            FROM {DATA_RULE_TABLE}
+            WHERE field_name = '颜色级' AND rule_type = 'value_alias'
+            """
+        ).fetchall()
+        for row in rows:
+            standard_value = standard_color_grade_value(row["match_value"])
+            if not standard_value or standard_value == str(row["output_value"] or ""):
+                continue
+            connection.execute(
+                f"""
+                UPDATE {DATA_RULE_TABLE}
+                SET output_value = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (standard_value, utc_now(), row["id"]),
+            )
+
+    def delete_legacy_interval_rules(self, connection: sqlite3.Connection) -> None:
+        """删除未绑定适用值的旧默认区间规则。"""
+
+        connection.execute(
+            f"""
+            DELETE FROM {DATA_RULE_TABLE}
+            WHERE rule_type IN ('score_range', 'filter_range')
+              AND match_key = ''
+            """
+        )
 
     def load_ruleset(self) -> RuleSet:
         self.initialize()
@@ -593,21 +676,43 @@ class RuleRepository:
         rule_type = str(payload.get("rule_type") or "").strip()
         if not field_name:
             raise ValueError("字段不能为空")
-        if not rule_name:
-            raise ValueError("规则名称不能为空")
         if rule_type not in DATA_RULE_TYPES:
             raise ValueError("数据规则类型不支持")
 
         match_value = str(payload.get("match_value") or "").strip()
+        output_value = str(payload.get("output_value") or "").strip()
         min_value = self._optional_float(payload.get("min_value"))
         max_value = self._optional_float(payload.get("max_value"))
         score_delta = self._optional_int(payload.get("score_delta"))
-        if rule_type == "value_alias" and not match_value:
-            raise ValueError("值别名规则必须填写匹配值")
-        if rule_type in {"score_range", "filter_range"} and min_value is None and max_value is None:
+        if rule_type == "value_alias":
+            if not match_value:
+                raise ValueError("值别名规则必须填写匹配值")
+            if not output_value and field_name == "颜色级":
+                output_value = standard_color_grade_value(match_value)
+            if not output_value:
+                raise ValueError("值别名规则必须填写输出值")
+        if rule_type in {"score_range", "filter_range"} and not match_value:
+            raise ValueError("区间规则必须选择适用值")
+        if (
+            rule_type in {"score_range", "filter_range"}
+            and not self._value_alias_output_exists(
+                field_name,
+                match_value,
+            )
+        ):
+            raise ValueError("适用值必须来自当前字段的值别名输出值")
+        if (
+            rule_type in {"score_range", "filter_range"}
+            and min_value is None
+            and max_value is None
+        ):
             raise ValueError("区间规则至少要填写一个边界")
         if rule_type == "score_range" and score_delta is None:
             raise ValueError("评分区间必须填写加减分")
+        if rule_type == "keyword_filter" and not match_value:
+            raise ValueError("关键词过滤必须填写关键词")
+        if not rule_name:
+            rule_name = self._default_data_rule_name(field_name, rule_type, match_value)
 
         return DataRule(
             id=None,
@@ -621,11 +726,41 @@ class RuleRepository:
             min_inclusive=bool(payload.get("min_inclusive", True)),
             max_inclusive=bool(payload.get("max_inclusive", True)),
             score_delta=score_delta,
-            output_value=str(payload.get("output_value") or "").strip(),
+            output_value=output_value,
             enabled=bool(payload.get("enabled", True)),
             sort_order=int(payload.get("sort_order") or 0),
             notes=str(payload.get("notes") or "").strip(),
         )
+
+    def _value_alias_output_exists(self, field_name: str, output_value: str) -> bool:
+        output_key = normalize_text(output_value)
+        if not output_key:
+            return False
+        with closing(self.connect()) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT output_value
+                FROM {DATA_RULE_TABLE}
+                WHERE field_name = ? AND rule_type = 'value_alias' AND enabled = 1
+                """,
+                (field_name,),
+            ).fetchall()
+        return any(normalize_text(row["output_value"]) == output_key for row in rows)
+
+    @staticmethod
+    def _default_data_rule_name(
+        field_name: str,
+        rule_type: str,
+        match_value: str,
+    ) -> str:
+        type_labels = {
+            "value_alias": "值别名",
+            "score_range": "评分区间",
+            "filter_range": "过滤区间",
+            "keyword_filter": "关键词过滤",
+        }
+        suffix = f" {match_value}" if match_value else ""
+        return f"{field_name}{type_labels.get(rule_type, rule_type)}{suffix}"
 
     @staticmethod
     def _optional_float(value: Any) -> float | None:

@@ -7,8 +7,12 @@ from tempfile import TemporaryDirectory
 import pandas as pd
 
 from cotton_filter_app.processor import process_sheet
-from cotton_filter_app.scoring import extract_max_color_percent, parse_float
-from cotton_filter_app.rules import RULE_DB_ENV, RuleRepository
+from cotton_filter_app.scoring import extract_max_color_percent, parse_float, score_record
+from cotton_filter_app.rules import (
+    RULE_DB_ENV,
+    RuleRepository,
+    standard_color_grade_value,
+)
 
 
 class FilteringRulesTest(unittest.TestCase):
@@ -38,6 +42,22 @@ class FilteringRulesTest(unittest.TestCase):
         self.assertEqual(parse_float("30.5mm"), 30.5)
         self.assertEqual(parse_float("4.1(A)"), 4.1)
         self.assertEqual(parse_float("打包-1500"), -1500.0)
+
+    def test_color_grade_aliases_have_standard_output_values(self) -> None:
+        self.assertEqual(standard_color_grade_value("31"), "白棉3级")
+        self.assertEqual(standard_color_grade_value("白棉三级"), "白棉3级")
+        self.assertEqual(standard_color_grade_value("白棉3级"), "白棉3级")
+        self.assertEqual(standard_color_grade_value("三级棉"), "白棉3级")
+
+        repository = RuleRepository()
+        rules = repository.load_ruleset().enabled_data_rules()
+        color_rules = {
+            rule.match_value: rule.output_value
+            for rule in rules
+            if rule.field_name == "颜色级" and rule.rule_type == "value_alias"
+        }
+        self.assertEqual(color_rules["31"], "白棉3级")
+        self.assertEqual(color_rules["白棉3级"], "白棉3级")
 
     def test_process_sheet_supports_grouped_color_columns(self) -> None:
         raw_frame = pd.DataFrame(
@@ -79,8 +99,8 @@ class FilteringRulesTest(unittest.TestCase):
         self.assertEqual(len(result), 1)
         row = result.iloc[0]
         self.assertEqual(row["批号"], "A001")
-        self.assertEqual(row["得分"], 1050)
-        self.assertEqual(row["与基差差距"], -50)
+        self.assertEqual(row["得分"], 0)
+        self.assertEqual(row["与基差差距"], 1000)
         self.assertIn("白棉3级:95%", row["颜色级"])
 
     def test_added_rules_are_used_by_processor(self) -> None:
@@ -95,7 +115,6 @@ class FilteringRulesTest(unittest.TestCase):
         repository.create_data_rule(
             {
                 "field_name": "颜色级",
-                "rule_name": "颜色级值 三级棉",
                 "rule_type": "value_alias",
                 "match_value": "三级棉",
                 "enabled": True,
@@ -114,8 +133,108 @@ class FilteringRulesTest(unittest.TestCase):
         assert result is not None
         row = result.iloc[0]
         self.assertEqual(row["马值"], 4.1)
-        self.assertEqual(row["颜色级"], "三级棉")
-        self.assertEqual(row["得分"], 350)
+        self.assertEqual(row["颜色级"], "白棉3级")
+        self.assertEqual(row["得分"], 0)
+
+    def test_color_grade_alias_is_normalized_in_output(self) -> None:
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "颜色级"],
+                ["A003", 350, 29.5, 4.1, "31"],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.iloc[0]["颜色级"], "白棉3级")
+
+    def test_score_range_can_target_specific_value(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "value_alias",
+                "match_value": "A",
+                "output_value": "A",
+                "enabled": True,
+            }
+        )
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "score_range",
+                "match_value": "A",
+                "max_value": 4.2,
+                "score_delta": 25,
+                "enabled": True,
+            }
+        )
+        rule_set = repository.load_ruleset()
+
+        self.assertEqual(score_record({"马值": "4.1(A)"}, rule_set=rule_set), 25)
+        self.assertEqual(score_record({"马值": "4.1(B)"}, rule_set=rule_set), 0)
+
+    def test_legacy_interval_rules_are_removed_from_defaults(self) -> None:
+        repository = RuleRepository()
+        rules = repository.load_ruleset().enabled_data_rules()
+
+        self.assertFalse(
+            [
+                rule
+                for rule in rules
+                if rule.rule_type in {"score_range", "filter_range"}
+                and not rule.match_value
+            ]
+        )
+
+    def test_range_rule_requires_alias_output_value(self) -> None:
+        repository = RuleRepository()
+        with self.assertRaisesRegex(ValueError, "区间规则必须选择适用值"):
+            repository.create_data_rule(
+                {
+                    "field_name": "马值",
+                    "rule_type": "score_range",
+                    "max_value": 4.2,
+                    "score_delta": 25,
+                }
+            )
+
+        with self.assertRaisesRegex(ValueError, "适用值必须来自当前字段的值别名输出值"):
+            repository.create_data_rule(
+                {
+                    "field_name": "马值",
+                    "rule_type": "score_range",
+                    "match_value": "A",
+                    "max_value": 4.2,
+                    "score_delta": 25,
+                }
+            )
+
+    def test_keyword_filter_keeps_matching_rows(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "仓库",
+                "rule_type": "keyword_filter",
+                "match_value": "上海",
+                "enabled": True,
+            }
+        )
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "仓库"],
+                ["A004", 350, 29.5, 4.1, "上海一号库"],
+                ["A005", 350, 29.5, 4.1, "青岛库"],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result["批号"].tolist(), ["A004"])
 
 
 if __name__ == "__main__":

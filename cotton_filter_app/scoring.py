@@ -81,10 +81,13 @@ def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
     score = 0
 
     for rule in active_rule_set.score_rules():
+        raw_value = record.get(rule.field_name)
+        if not active_rule_set.rule_matches_value(rule, raw_value):
+            continue
         if rule.field_name == "颜色级":
-            value = extract_max_color_percent(record.get(rule.field_name), active_rule_set)
+            value = extract_max_color_percent(raw_value, active_rule_set)
         else:
-            value = parse_float(record.get(rule.field_name))
+            value = parse_float(raw_value)
         if matches_range(value, rule):
             score += rule.score_delta or 0
 

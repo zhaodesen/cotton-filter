@@ -19,7 +19,6 @@ interface RulesViewProps {
 
 interface DataRuleForm {
   field_name: string;
-  rule_name: string;
   rule_type: DataRule["rule_type"];
   match_value: string;
   min_value: string;
@@ -41,6 +40,7 @@ const DEFAULT_STANDARD_FIELDS = [
   "马值",
   "整齐度",
   "批号",
+  "仓库",
 ];
 
 // 列名规则中始终隐藏的字段。
@@ -51,7 +51,6 @@ const EXCLUDED_DATA_FIELDS = new Set(["基差", "与基差差距"]);
 
 const DEFAULT_DATA_FORM: DataRuleForm = {
   field_name: "",
-  rule_name: "",
   rule_type: "value_alias",
   match_value: "",
   min_value: "",
@@ -69,6 +68,7 @@ const RULE_TYPE_LABELS: Record<DataRule["rule_type"], string> = {
   value_alias: "值别名",
   score_range: "评分区间",
   filter_range: "过滤区间",
+  keyword_filter: "关键词过滤",
 };
 
 function formatError(error: unknown): string {
@@ -96,6 +96,9 @@ function formatRange(rule: DataRule): string {
       ? `${rule.match_value} -> ${rule.output_value}`
       : rule.match_value;
   }
+  if (rule.rule_type === "keyword_filter") {
+    return rule.match_value;
+  }
 
   const left = rule.min_value === null
     ? "不限"
@@ -108,6 +111,12 @@ function formatRange(rule: DataRule): string {
 
 function ruleDetail(rule: DataRule): string {
   const parts = [formatRange(rule)];
+  if (rule.rule_type === "keyword_filter") {
+    return parts.filter(Boolean).join(" · ");
+  }
+  if (rule.rule_type !== "value_alias" && rule.match_value) {
+    parts.unshift(`适用值 ${rule.match_value}`);
+  }
   if (rule.score_delta !== null && rule.score_delta !== undefined) {
     const sign = rule.score_delta > 0 ? "+" : "";
     parts.push(`${sign}${rule.score_delta}分`);
@@ -117,6 +126,29 @@ function ruleDetail(rule: DataRule): string {
 
 function ruleSummary(rule: DataRule): string {
   return `${RULE_TYPE_LABELS[rule.rule_type]} · ${ruleDetail(rule)}`;
+}
+
+function aliasOutputValues(rules: DataRule[]): string[] {
+  return Array.from(
+    new Set(
+      rules
+        .map((rule) => rule.output_value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  ).sort((first, second) => first.localeCompare(second, "zh-CN"));
+}
+
+function groupAliasRulesByOutput(rules: DataRule[]): [string, DataRule[]][] {
+  const groups = new Map<string, DataRule[]>();
+  for (const rule of rules) {
+    const outputValue = rule.output_value.trim() || rule.match_value.trim();
+    const group = groups.get(outputValue) || [];
+    group.push(rule);
+    groups.set(outputValue, group);
+  }
+  return Array.from(groups.entries()).sort(([first], [second]) =>
+    first.localeCompare(second, "zh-CN"),
+  );
 }
 
 export default function RulesView({
@@ -130,6 +162,7 @@ export default function RulesView({
   const [aliasDialogField, setAliasDialogField] = useState<string | null>(null);
   const [aliasValue, setAliasValue] = useState("");
   const [dataDialogField, setDataDialogField] = useState<string | null>(null);
+  const [detailRule, setDetailRule] = useState<DataRule | null>(null);
   const [openColumn, setOpenColumn] = useState(true);
   const [openData, setOpenData] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -167,12 +200,37 @@ export default function RulesView({
     return groups;
   }, [columnRules, columnFields]);
 
-  const dataRulesByField = useMemo(() => {
+  const valueAliasRulesByField = useMemo(() => {
     const groups = new Map<string, DataRule[]>();
     for (const fieldName of dataFields) {
       groups.set(fieldName, []);
     }
     for (const rule of dataRules) {
+      if (rule.rule_type !== "value_alias") {
+        continue;
+      }
+      const rules = groups.get(rule.field_name) || [];
+      rules.push(rule);
+      groups.set(rule.field_name, rules);
+    }
+    for (const rules of groups.values()) {
+      rules.sort(
+        (first, second) =>
+          first.sort_order - second.sort_order || first.id - second.id,
+      );
+    }
+    return groups;
+  }, [dataRules, dataFields]);
+
+  const intervalRulesByField = useMemo(() => {
+    const groups = new Map<string, DataRule[]>();
+    for (const fieldName of dataFields) {
+      groups.set(fieldName, []);
+    }
+    for (const rule of dataRules) {
+      if (rule.rule_type === "value_alias") {
+        continue;
+      }
       const rules = groups.get(rule.field_name) || [];
       rules.push(rule);
       groups.set(rule.field_name, rules);
@@ -217,8 +275,19 @@ export default function RulesView({
     setAliasValue("");
   }
 
-  function openDataDialog(fieldName: string) {
-    setDataForm({ ...DEFAULT_DATA_FORM, field_name: fieldName });
+  function openDataDialog(
+    fieldName: string,
+    ruleType: DataRule["rule_type"],
+  ) {
+    const aliasValues = aliasOutputValues(valueAliasRulesByField.get(fieldName) || []);
+    setDataForm({
+      ...DEFAULT_DATA_FORM,
+      field_name: fieldName,
+      rule_type: ruleType,
+      match_value: ruleType === "filter_range" || ruleType === "score_range"
+        ? aliasValues[0] || ""
+        : "",
+    });
     setDataDialogField(fieldName);
     setErrorText("");
   }
@@ -264,7 +333,6 @@ export default function RulesView({
     try {
       await createDataRule(baseUrl, {
         field_name: dataForm.field_name,
-        rule_name: dataForm.rule_name,
         rule_type: dataForm.rule_type,
         match_value: dataForm.match_value,
         min_value: optionalNumber(dataForm.min_value),
@@ -278,7 +346,7 @@ export default function RulesView({
         notes: dataForm.notes,
       });
       await reloadRules();
-      onLog(`数据规则已保存: ${dataForm.field_name} / ${dataForm.rule_name}`);
+      onLog(`数据规则已保存: ${dataForm.field_name} / ${RULE_TYPE_LABELS[dataForm.rule_type]}`);
       closeDataDialog();
     } catch (error) {
       setErrorText(formatError(error));
@@ -308,15 +376,19 @@ export default function RulesView({
     try {
       await deleteDataRule(baseUrl, rule.id);
       await reloadRules();
-      onLog(`数据规则已删除: ${rule.rule_name || rule.field_name}`);
+      onLog(`数据规则已删除: ${rule.field_name} / ${RULE_TYPE_LABELS[rule.rule_type]}`);
     } catch (error) {
       setErrorText(formatError(error));
     }
   }
 
-  const showRange = dataForm.rule_type !== "value_alias";
   const showAlias = dataForm.rule_type === "value_alias";
   const showScore = dataForm.rule_type === "score_range";
+  const showKeyword = dataForm.rule_type === "keyword_filter";
+  const showNumericRange = dataForm.rule_type === "score_range" || dataForm.rule_type === "filter_range";
+  const applicableValues = dataDialogField
+    ? aliasOutputValues(valueAliasRulesByField.get(dataDialogField) || [])
+    : [];
 
   return (
     <section className="rules-view">
@@ -393,63 +465,138 @@ export default function RulesView({
             />
           </button>
           {openData ? (
-            <div className="field-rule-list">
-              {dataFields.map((fieldName) => {
-                const rules = dataRulesByField.get(fieldName) || [];
-                return (
-                  <div
-                    className="field-rule-row data-rule-row"
-                    key={fieldName}
-                  >
-                    <strong className="field-rule-name">{fieldName}</strong>
-                    <div className="rule-pill-list">
-                      {rules.length === 0 ? (
-                        <span className="alias-empty">暂无规则</span>
-                      ) : (
-                        rules.map((rule) => (
-                          <div className="rule-pill" key={rule.id}>
-                            <div className="rule-pill-body">
-                              <span className="rule-pill-top">
-                                <span className="rule-pill-tag">
-                                  {RULE_TYPE_LABELS[rule.rule_type]}
-                                </span>
-                                <span className="rule-pill-name">
-                                  {rule.rule_name ||
-                                    RULE_TYPE_LABELS[rule.rule_type]}
-                                </span>
-                              </span>
-                              <span
-                                className="rule-pill-meta"
-                                title={ruleSummary(rule)}
-                              >
-                                {ruleDetail(rule)}
-                              </span>
-                            </div>
-                            <button
-                              className="chip-delete"
-                              type="button"
-                              title="删除规则"
-                              onClick={() => removeData(rule)}
-                              disabled={isSaving}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <button
-                      className="alias-add-button"
-                      type="button"
-                      title={`为 ${fieldName} 新增规则`}
-                      onClick={() => openDataDialog(fieldName)}
-                      disabled={!backendReady || isSaving}
-                    >
-                      <Plus size={15} />
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="data-rule-sections">
+              <div className="data-rule-section">
+                <h3>值别名</h3>
+                <div className="field-rule-list">
+                  {dataFields.map((fieldName) => {
+                    const rules = valueAliasRulesByField.get(fieldName) || [];
+                    return (
+                      <div
+                        className="field-rule-row data-rule-row"
+                        key={`alias-${fieldName}`}
+                      >
+                        <strong className="field-rule-name">{fieldName}</strong>
+                        <div className="rule-pill-list alias-rule-group-list">
+                          {rules.length === 0 ? (
+                            <span className="alias-empty">暂无别名</span>
+                          ) : (
+                            groupAliasRulesByOutput(rules).map(([outputValue, groupedRules]) => (
+                              <div className="alias-rule-group" key={outputValue}>
+                                <div className="alias-rule-group-title">
+                                  {outputValue}
+                                </div>
+                                <div className="alias-rule-group-items">
+                                  {groupedRules.map((rule) => (
+                                    <div className="rule-pill" key={rule.id}>
+                                      <button
+                                        className="rule-pill-body rule-pill-view"
+                                        type="button"
+                                        title="查看规则详情"
+                                        onClick={() => setDetailRule(rule)}
+                                      >
+                                        <span className="rule-pill-meta">
+                                          {rule.match_value}
+                                        </span>
+                                      </button>
+                                      <button
+                                        className="chip-delete"
+                                        type="button"
+                                        title="删除别名"
+                                        onClick={() => removeData(rule)}
+                                        disabled={isSaving}
+                                      >
+                                        <X size={14} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <button
+                          className="alias-add-button"
+                          type="button"
+                          title={`为 ${fieldName} 新增值别名`}
+                          onClick={() => openDataDialog(fieldName, "value_alias")}
+                          disabled={
+                            !backendReady ||
+                            isSaving ||
+                            aliasOutputValues(valueAliasRulesByField.get(fieldName) || [])
+                              .length === 0
+                          }
+                        >
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="data-rule-section">
+                <h3>评分与过滤区间</h3>
+                <div className="field-rule-list">
+                  {dataFields.map((fieldName) => {
+                    const rules = intervalRulesByField.get(fieldName) || [];
+                    return (
+                      <div
+                        className="field-rule-row data-rule-row"
+                        key={`range-${fieldName}`}
+                      >
+                        <strong className="field-rule-name">{fieldName}</strong>
+                        <div className="rule-pill-list">
+                          {rules.length === 0 ? (
+                            <span className="alias-empty">暂无区间</span>
+                          ) : (
+                            rules.map((rule) => (
+                              <div className="rule-pill" key={rule.id}>
+                                <button
+                                  className="rule-pill-body rule-pill-view"
+                                  type="button"
+                                  title="查看规则详情"
+                                  onClick={() => setDetailRule(rule)}
+                                >
+                                  <span className="rule-pill-top">
+                                    <span className="rule-pill-tag">
+                                      {RULE_TYPE_LABELS[rule.rule_type]}
+                                    </span>
+                                  </span>
+                                  <span
+                                    className="rule-pill-meta"
+                                    title={ruleSummary(rule)}
+                                  >
+                                    {ruleDetail(rule)}
+                                  </span>
+                                </button>
+                                <button
+                                  className="chip-delete"
+                                  type="button"
+                                  title="删除区间"
+                                  onClick={() => removeData(rule)}
+                                  disabled={isSaving}
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <button
+                          className="alias-add-button"
+                          type="button"
+                          title={`为 ${fieldName} 新增区间`}
+                          onClick={() => openDataDialog(fieldName, "score_range")}
+                          disabled={!backendReady || isSaving}
+                        >
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           ) : null}
         </section>
@@ -545,30 +692,23 @@ export default function RulesView({
                     }))
                   }
                 >
-                  <option value="value_alias">值别名</option>
-                  <option value="score_range">评分区间</option>
-                  <option value="filter_range">过滤区间</option>
+                  {showAlias ? (
+                    <option value="value_alias">值别名</option>
+                  ) : (
+                    <>
+                      <option value="score_range">评分区间</option>
+                      <option value="filter_range">过滤区间</option>
+                      <option value="keyword_filter">关键词过滤</option>
+                    </>
+                  )}
                 </select>
-              </label>
-              <label>
-                <span>规则名称</span>
-                <input
-                  autoFocus
-                  value={dataForm.rule_name}
-                  onChange={(event) =>
-                    setDataForm((current) => ({
-                      ...current,
-                      rule_name: event.target.value,
-                    }))
-                  }
-                  placeholder="便于识别的名称"
-                />
               </label>
               {showAlias ? (
                 <>
                   <label>
                     <span>匹配值</span>
                     <input
+                      autoFocus
                       value={dataForm.match_value}
                       onChange={(event) =>
                         setDataForm((current) => ({
@@ -594,37 +734,74 @@ export default function RulesView({
                   </label>
                 </>
               ) : null}
-              {showRange ? (
-                <div className="modal-field-pair">
+              {showKeyword ? (
+                <label>
+                  <span>关键词</span>
+                  <input
+                    autoFocus
+                    value={dataForm.match_value}
+                    onChange={(event) =>
+                      setDataForm((current) => ({
+                        ...current,
+                        match_value: event.target.value,
+                      }))
+                    }
+                    placeholder="命中该关键词则保留"
+                  />
+                </label>
+              ) : null}
+              {showNumericRange ? (
+                <>
                   <label>
-                    <span>最小值</span>
-                    <input
-                      value={dataForm.min_value}
+                    <span>适用值</span>
+                    <select
+                      autoFocus
+                      value={dataForm.match_value}
                       onChange={(event) =>
                         setDataForm((current) => ({
                           ...current,
-                          min_value: event.target.value,
+                          match_value: event.target.value,
                         }))
                       }
-                      inputMode="decimal"
-                      placeholder="不限"
-                    />
+                    >
+                      {applicableValues.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                  <label>
-                    <span>最大值</span>
-                    <input
-                      value={dataForm.max_value}
-                      onChange={(event) =>
-                        setDataForm((current) => ({
-                          ...current,
-                          max_value: event.target.value,
-                        }))
-                      }
-                      inputMode="decimal"
-                      placeholder="不限"
-                    />
-                  </label>
-                </div>
+                  <div className="modal-field-pair">
+                    <label>
+                      <span>最小值</span>
+                      <input
+                        value={dataForm.min_value}
+                        onChange={(event) =>
+                          setDataForm((current) => ({
+                            ...current,
+                            min_value: event.target.value,
+                          }))
+                        }
+                        inputMode="decimal"
+                        placeholder="不限"
+                      />
+                    </label>
+                    <label>
+                      <span>最大值</span>
+                      <input
+                        value={dataForm.max_value}
+                        onChange={(event) =>
+                          setDataForm((current) => ({
+                            ...current,
+                            max_value: event.target.value,
+                          }))
+                        }
+                        inputMode="decimal"
+                        placeholder="不限"
+                      />
+                    </label>
+                  </div>
+                </>
               ) : null}
               {showScore ? (
                 <label>
@@ -653,12 +830,67 @@ export default function RulesView({
                 <button
                   className="primary-button"
                   type="submit"
-                  disabled={!backendReady || isSaving}
+                  disabled={
+                    !backendReady ||
+                    isSaving ||
+                    (showAlias && (!dataForm.match_value.trim() || !dataForm.output_value.trim())) ||
+                    (showKeyword && !dataForm.match_value.trim()) ||
+                    (showNumericRange && !dataForm.match_value)
+                  }
                 >
                   保存
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {detailRule ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rule-detail-title"
+          >
+            <div className="modal-header">
+              <h2 id="rule-detail-title">规则详情</h2>
+              <button
+                className="icon-button"
+                type="button"
+                title="关闭"
+                onClick={() => setDetailRule(null)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="rule-detail">
+              <div>
+                <span>字段</span>
+                <strong>{detailRule.field_name}</strong>
+              </div>
+              <div>
+                <span>类型</span>
+                <strong>{RULE_TYPE_LABELS[detailRule.rule_type]}</strong>
+              </div>
+              <div>
+                <span>规则</span>
+                <strong>{ruleDetail(detailRule)}</strong>
+              </div>
+              {detailRule.output_value ? (
+                <div>
+                  <span>输出值</span>
+                  <strong>{detailRule.output_value}</strong>
+                </div>
+              ) : null}
+              {detailRule.notes ? (
+                <div>
+                  <span>备注</span>
+                  <strong>{detailRule.notes}</strong>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}

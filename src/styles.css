@@ -588,6 +588,24 @@ h2 {
   overflow: auto;
 }
 
+.data-rule-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.data-rule-section {
+  display: grid;
+  gap: 8px;
+}
+
+.data-rule-section h3 {
+  margin: 0;
+  padding: 0 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .field-rule-row {
   display: grid;
   grid-template-columns: 68px minmax(0, 1fr) 30px;
@@ -657,6 +675,33 @@ h2 {
   min-width: 0;
 }
 
+.alias-rule-group-list {
+  grid-template-columns: 1fr;
+}
+
+.alias-rule-group {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.alias-rule-group-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.alias-rule-group-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
 .alias-empty {
   color: var(--text-subtle);
   font-size: 13px;
@@ -696,6 +741,22 @@ h2 {
   min-width: 0;
 }
 
+.rule-pill-view {
+  align-items: stretch;
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.rule-pill-view:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  transform: none;
+}
+
 .rule-pill-top {
   display: flex;
   align-items: center;
@@ -712,17 +773,6 @@ h2 {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
-}
-
-.rule-pill-name {
-  flex: 1;
-  min-width: 0;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .rule-pill-meta {
@@ -834,6 +884,31 @@ select:focus {
   justify-content: flex-end;
   gap: 10px;
   padding-top: 4px;
+}
+
+.rule-detail {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.rule-detail div {
+  display: grid;
+  gap: 5px;
+}
+
+.rule-detail span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rule-detail strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 /* ============================================================
