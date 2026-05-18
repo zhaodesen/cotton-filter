@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Iterator
 
@@ -389,6 +391,24 @@ def create_app() -> FastAPI:
     return app
 
 
+def configure_stdio() -> None:
+    """在无控制台（PyInstaller --windowed）模式下修正 stdout/stderr。
+
+    Windows 打包成 GUI 子系统后 sys.stdout / sys.stderr 为 None，
+    print() 与 uvicorn 日志会抛 RuntimeError 导致后端启动即崩溃。
+    这里把缺失的流指向 os.devnull，保证服务静默且稳定运行。
+    """
+
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+
+    sink = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = sink
+    if sys.stderr is None:
+        sys.stderr = sink
+
+
 def parse_args() -> argparse.Namespace:
     """解析 sidecar 启动参数。"""
 
@@ -401,6 +421,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """启动本地 API 服务。"""
 
+    configure_stdio()
     args = parse_args()
     print(f"LISTENING http://{args.host}:{args.port}", flush=True)
     uvicorn.run(

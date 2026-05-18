@@ -46,6 +46,10 @@ execFileSync(
     "--noconfirm",
     "--clean",
     "--onefile",
+    // Windows 上 PyInstaller 默认是控制台程序，会让 Tauri sidecar 弹出小黑窗。
+    // --windowed 改为 GUI 子系统，不分配控制台。仅限 Windows：macOS 上
+    // --windowed 会生成 .app bundle，破坏单文件 sidecar 的预期。
+    ...(process.platform === "win32" ? ["--windowed"] : []),
     "--name",
     "cotton-filter-backend",
     "--distpath",
