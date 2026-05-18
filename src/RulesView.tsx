@@ -52,15 +52,16 @@ const DEFAULT_STANDARD_FIELDS = [
   "强力",
   "马值",
   "整齐度",
-  "批号",
-  "仓库",
 ];
 
+const VALUE_ALIAS_FIELDS = ["颜色级"];
+const VALUE_ALIAS_FIELD_SET = new Set(VALUE_ALIAS_FIELDS);
+
 // 列名规则中始终隐藏的字段。
-const EXCLUDED_COLUMN_FIELDS = new Set(["与基差差距"]);
+const EXCLUDED_COLUMN_FIELDS = new Set(["与基差差距", "批号", "仓库"]);
 
 // 数据规则中始终隐藏的字段（基差不参与数据规则）。
-const EXCLUDED_DATA_FIELDS = new Set(["基差", "与基差差距"]);
+const EXCLUDED_DATA_FIELDS = new Set(["基差", "与基差差距", "批号", "仓库"]);
 
 const DEFAULT_DATA_FORM: DataRuleForm = {
   field_name: "",
@@ -151,6 +152,10 @@ function aliasOutputValues(rules: DataRule[]): string[] {
   ).sort((first, second) => first.localeCompare(second, "zh-CN"));
 }
 
+function rangeRequiresApplicableValue(fieldName: string): boolean {
+  return VALUE_ALIAS_FIELD_SET.has(fieldName);
+}
+
 function groupAliasRulesByOutput(rules: DataRule[]): [string, DataRule[]][] {
   const groups = new Map<string, DataRule[]>();
   for (const rule of rules) {
@@ -214,11 +219,14 @@ export default function RulesView({
 
   const valueAliasRulesByField = useMemo(() => {
     const groups = new Map<string, DataRule[]>();
-    for (const fieldName of dataFields) {
+    for (const fieldName of VALUE_ALIAS_FIELDS) {
       groups.set(fieldName, []);
     }
     for (const rule of dataRules) {
-      if (rule.rule_type !== "value_alias") {
+      if (
+        rule.rule_type !== "value_alias" ||
+        !VALUE_ALIAS_FIELD_SET.has(rule.field_name)
+      ) {
         continue;
       }
       const rules = groups.get(rule.field_name) || [];
@@ -232,7 +240,7 @@ export default function RulesView({
       );
     }
     return groups;
-  }, [dataRules, dataFields]);
+  }, [dataRules]);
 
   const intervalRulesByField = useMemo(() => {
     const groups = new Map<string, DataRule[]>();
@@ -292,13 +300,15 @@ export default function RulesView({
     ruleType: DataRule["rule_type"],
   ) {
     const aliasValues = aliasOutputValues(valueAliasRulesByField.get(fieldName) || []);
+    const needsApplicableValue = rangeRequiresApplicableValue(fieldName);
     setDataForm({
       ...DEFAULT_DATA_FORM,
       field_name: fieldName,
       rule_type: ruleType,
-      match_value: ruleType === "filter_range" || ruleType === "score_range"
-        ? aliasValues[0] || ""
-        : "",
+      match_value:
+        needsApplicableValue && (ruleType === "filter_range" || ruleType === "score_range")
+          ? aliasValues[0] || ""
+          : "",
     });
     setDataDialogField(fieldName);
     setErrorText("");
@@ -458,6 +468,9 @@ export default function RulesView({
   const showScore = dataForm.rule_type === "score_range";
   const showKeyword = dataForm.rule_type === "keyword_filter";
   const showNumericRange = dataForm.rule_type === "score_range" || dataForm.rule_type === "filter_range";
+  const showApplicableValue = showNumericRange &&
+    Boolean(dataDialogField) &&
+    rangeRequiresApplicableValue(dataDialogField || "");
   const applicableValues = dataDialogField
     ? aliasOutputValues(valueAliasRulesByField.get(dataDialogField) || [])
     : [];
@@ -568,7 +581,7 @@ export default function RulesView({
           ) : null}
           {activePanel === "aliases" ? (
             <div className="field-rule-list">
-              {dataFields.map((fieldName) => {
+              {VALUE_ALIAS_FIELDS.map((fieldName) => {
                 const rules = valueAliasRulesByField.get(fieldName) || [];
                 return (
                   <div
@@ -683,8 +696,11 @@ export default function RulesView({
                       disabled={
                         !backendReady ||
                         isSaving ||
-                        aliasOutputValues(valueAliasRulesByField.get(fieldName) || [])
-                          .length === 0
+                        (
+                          rangeRequiresApplicableValue(fieldName) &&
+                          aliasOutputValues(valueAliasRulesByField.get(fieldName) || [])
+                            .length === 0
+                        )
                       }
                     >
                       <Plus size={15} />
@@ -845,58 +861,58 @@ export default function RulesView({
                   />
                 </label>
               ) : null}
+              {showApplicableValue ? (
+                <label>
+                  <span>适用值</span>
+                  <select
+                    autoFocus
+                    value={dataForm.match_value}
+                    onChange={(event) =>
+                      setDataForm((current) => ({
+                        ...current,
+                        match_value: event.target.value,
+                      }))
+                    }
+                  >
+                    {applicableValues.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               {showNumericRange ? (
-                <>
+                <div className="modal-field-pair">
                   <label>
-                    <span>适用值</span>
-                    <select
-                      autoFocus
-                      value={dataForm.match_value}
+                    <span>最小值</span>
+                    <input
+                      value={dataForm.min_value}
                       onChange={(event) =>
                         setDataForm((current) => ({
                           ...current,
-                          match_value: event.target.value,
+                          min_value: event.target.value,
                         }))
                       }
-                    >
-                      {applicableValues.map((value) => (
-                        <option key={value} value={value}>
-                          {value}
-                        </option>
-                      ))}
-                    </select>
+                      inputMode="decimal"
+                      placeholder="不限，支持 80 或 80%"
+                    />
                   </label>
-                  <div className="modal-field-pair">
-                    <label>
-                      <span>最小值</span>
-                      <input
-                        value={dataForm.min_value}
-                        onChange={(event) =>
-                          setDataForm((current) => ({
-                            ...current,
-                            min_value: event.target.value,
-                          }))
-                        }
-                        inputMode="decimal"
-                        placeholder="不限，支持 80 或 80%"
-                      />
-                    </label>
-                    <label>
-                      <span>最大值</span>
-                      <input
-                        value={dataForm.max_value}
-                        onChange={(event) =>
-                          setDataForm((current) => ({
-                            ...current,
-                            max_value: event.target.value,
-                          }))
-                        }
-                        inputMode="decimal"
-                        placeholder="不限，支持 80 或 80%"
-                      />
-                    </label>
-                  </div>
-                </>
+                  <label>
+                    <span>最大值</span>
+                    <input
+                      value={dataForm.max_value}
+                      onChange={(event) =>
+                        setDataForm((current) => ({
+                          ...current,
+                          max_value: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      placeholder="不限，支持 80 或 80%"
+                    />
+                  </label>
+                </div>
               ) : null}
               {showScore ? (
                 <label>
@@ -930,7 +946,7 @@ export default function RulesView({
                     isSaving ||
                     (showAlias && (!dataForm.match_value.trim() || !dataForm.output_value.trim())) ||
                     (showKeyword && !dataForm.match_value.trim()) ||
-                    (showNumericRange && !dataForm.match_value)
+                    (showApplicableValue && !dataForm.match_value)
                   }
                 >
                   保存

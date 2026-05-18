@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from cotton_filter_app.processor import filter_file, process_sheet
+from cotton_filter_app.processor import filter_file, process_sheet, process_sheet_result
 from cotton_filter_app.scoring import extract_max_color_percent, parse_float, score_record
 from cotton_filter_app.rules import (
     RULE_DB_ENV,
@@ -100,7 +100,6 @@ class FilteringRulesTest(unittest.TestCase):
         assert result is not None
         self.assertEqual(len(result), 1)
         row = result.iloc[0]
-        self.assertEqual(row["批号"], "A001")
         self.assertEqual(row["得分"], 0)
         self.assertEqual(row["与基差差距"], 1000)
         self.assertIn("白棉3级:95%", row["颜色级"])
@@ -152,22 +151,12 @@ class FilteringRulesTest(unittest.TestCase):
         assert result is not None
         self.assertEqual(result.iloc[0]["颜色级"], "白棉3级")
 
-    def test_score_range_can_target_specific_value(self) -> None:
+    def test_score_range_can_apply_numeric_field_without_alias(self) -> None:
         repository = RuleRepository()
         repository.create_data_rule(
             {
                 "field_name": "马值",
-                "rule_type": "value_alias",
-                "match_value": "A",
-                "output_value": "A",
-                "enabled": True,
-            }
-        )
-        repository.create_data_rule(
-            {
-                "field_name": "马值",
                 "rule_type": "score_range",
-                "match_value": "A",
                 "max_value": 4.2,
                 "score_delta": 25,
                 "enabled": True,
@@ -176,7 +165,33 @@ class FilteringRulesTest(unittest.TestCase):
         rule_set = repository.load_ruleset()
 
         self.assertEqual(score_record({"马值": "4.1(A)"}, rule_set=rule_set), 25)
-        self.assertEqual(score_record({"马值": "4.1(B)"}, rule_set=rule_set), 0)
+        self.assertEqual(score_record({"马值": "4.8(A)"}, rule_set=rule_set), 0)
+
+    def test_batch_and_warehouse_rules_are_not_maintained(self) -> None:
+        repository = RuleRepository()
+        rule_set = repository.load_ruleset()
+
+        self.assertFalse(
+            [
+                rule
+                for rule in rule_set.enabled_column_rules()
+                if rule.field_name in {"批号", "仓库"}
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "该字段不再维护列名规则"):
+            repository.create_column_rule(
+                {"field_name": "仓库", "alias": "存放仓库", "enabled": True}
+            )
+
+        with self.assertRaisesRegex(ValueError, "该字段不再维护数据规则"):
+            repository.create_data_rule(
+                {
+                    "field_name": "批号",
+                    "rule_type": "keyword_filter",
+                    "match_value": "A",
+                }
+            )
 
     def test_legacy_interval_rules_are_removed_from_defaults(self) -> None:
         repository = RuleRepository()
@@ -191,7 +206,7 @@ class FilteringRulesTest(unittest.TestCase):
             ]
         )
 
-    def test_legacy_interval_rules_are_removed_from_existing_database(self) -> None:
+    def test_numeric_interval_rules_without_applicable_value_are_kept(self) -> None:
         repository = RuleRepository()
         repository.initialize()
         with sqlite3.connect(os.environ[RULE_DB_ENV]) as connection:
@@ -210,20 +225,35 @@ class FilteringRulesTest(unittest.TestCase):
         repository.initialize()
         rules = repository.load_ruleset().enabled_data_rules()
 
-        self.assertFalse(
-            [
-                rule
-                for rule in rules
-                if rule.rule_name == "旧无适用值评分"
-            ]
+        self.assertTrue(
+            [rule for rule in rules if rule.rule_name == "旧无适用值评分"]
         )
 
     def test_range_rule_requires_alias_output_value(self) -> None:
         repository = RuleRepository()
-        with self.assertRaisesRegex(ValueError, "区间规则必须选择适用值"):
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "score_range",
+                "max_value": 4.2,
+                "score_delta": 25,
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "只有颜色级支持值别名"):
             repository.create_data_rule(
                 {
                     "field_name": "马值",
+                    "rule_type": "value_alias",
+                    "match_value": "A",
+                    "output_value": "A",
+                }
+            )
+
+        with self.assertRaisesRegex(ValueError, "区间规则必须选择适用值"):
+            repository.create_data_rule(
+                {
+                    "field_name": "颜色级",
                     "rule_type": "score_range",
                     "max_value": 4.2,
                     "score_delta": 25,
@@ -233,9 +263,9 @@ class FilteringRulesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "适用值必须来自当前字段的值别名输出值"):
             repository.create_data_rule(
                 {
-                    "field_name": "马值",
+                    "field_name": "颜色级",
                     "rule_type": "score_range",
-                    "match_value": "A",
+                    "match_value": "不存在",
                     "max_value": 4.2,
                     "score_delta": 25,
                 }
@@ -269,17 +299,17 @@ class FilteringRulesTest(unittest.TestCase):
         repository = RuleRepository()
         repository.create_data_rule(
             {
-                "field_name": "仓库",
+                "field_name": "颜色级",
                 "rule_type": "keyword_filter",
-                "match_value": "上海",
+                "match_value": "白棉3级",
                 "enabled": True,
             }
         )
         raw_frame = pd.DataFrame(
             [
-                ["批号", "基差", "长度", "马值", "仓库"],
-                ["A004", 350, 29.5, 4.1, "上海一号库"],
-                ["A005", 350, 29.5, 4.1, "青岛库"],
+                ["批号", "基差", "长度", "马值", "颜色级"],
+                ["A004", 350, 29.5, 4.1, "31"],
+                ["A005", 350, 29.5, 4.1, "41"],
             ]
         )
 
@@ -287,24 +317,15 @@ class FilteringRulesTest(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertEqual(result["批号"].tolist(), ["A004"])
+        self.assertEqual(result["颜色级"].tolist(), ["白棉3级"])
 
     def test_multiple_filter_rules_must_all_match(self) -> None:
         repository = RuleRepository()
         repository.create_data_rule(
             {
-                "field_name": "仓库",
+                "field_name": "颜色级",
                 "rule_type": "keyword_filter",
-                "match_value": "上海",
-                "enabled": True,
-            }
-        )
-        repository.create_data_rule(
-            {
-                "field_name": "马值",
-                "rule_type": "value_alias",
-                "match_value": "A",
-                "output_value": "A",
+                "match_value": "白棉3级",
                 "enabled": True,
             }
         )
@@ -312,7 +333,6 @@ class FilteringRulesTest(unittest.TestCase):
             {
                 "field_name": "马值",
                 "rule_type": "filter_range",
-                "match_value": "A",
                 "min_value": 4.0,
                 "max_value": 4.2,
                 "enabled": True,
@@ -320,10 +340,10 @@ class FilteringRulesTest(unittest.TestCase):
         )
         raw_frame = pd.DataFrame(
             [
-                ["批号", "基差", "长度", "马值", "仓库"],
-                ["A006", 350, 29.5, "4.1(A)", "上海一号库"],
-                ["A007", 350, 29.5, "4.8(A)", "上海一号库"],
-                ["A008", 350, 29.5, "4.1(A)", "青岛库"],
+                ["批号", "基差", "长度", "马值", "颜色级"],
+                ["A006", 350, 29.5, "4.1(A)", "31"],
+                ["A007", 350, 29.5, "4.8(A)", "31"],
+                ["A008", 350, 29.5, "4.1(A)", "41"],
             ]
         )
 
@@ -331,7 +351,7 @@ class FilteringRulesTest(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertEqual(result["批号"].tolist(), ["A006"])
+        self.assertEqual(result["颜色级"].tolist(), ["白棉3级"])
 
     def test_same_field_filter_ranges_are_combined_as_or_per_grade(self) -> None:
         repository = RuleRepository()
@@ -349,6 +369,7 @@ class FilteringRulesTest(unittest.TestCase):
         raw_frame = pd.DataFrame(
             [
                 ["批号", "基差", "长度", "马值", "颜色级"],
+                ["K0", 350, 29.5, 4.1, "21:2.2%，31:90.7%，41:2.1%"],
                 ["K1", 350, 29.5, 4.1, "白棉2级:2.2%，白棉3级:95.7%"],
                 ["K2", 350, 29.5, 4.1, "白棉1级:5.4%，白棉2级:94.1%，白棉3级:0.5%"],
                 ["K3", 350, 29.5, 4.1, "白棉2级:1.6%，白棉3级:68.8%"],
@@ -359,31 +380,24 @@ class FilteringRulesTest(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
+        # K0: 31 是 白棉3级 的值别名，31:90.7 命中 白棉3级>=80。
         # K1: 白棉3级 95.7>=80 命中；K2: 白棉2级 94.1>=60 命中；
         # K3: 白棉2级 1.6<60 且 白棉3级 68.8<80 → 不命中（按本级别比例判定）。
-        self.assertEqual(result["批号"].tolist(), ["K1", "K2"])
+        self.assertEqual(len(result), 3)
+        self.assertIn("31:90.7", result.iloc[0]["颜色级"])
+        self.assertIn("白棉3级:95.7", result.iloc[1]["颜色级"])
+        self.assertIn("白棉2级:94.1", result.iloc[2]["颜色级"])
 
     def test_filter_file_writes_result_and_issue_sheets_with_original_columns(self) -> None:
-        repository = RuleRepository()
-        repository.create_data_rule(
-            {
-                "field_name": "马值",
-                "rule_type": "value_alias",
-                "match_value": "A",
-                "output_value": "A",
-                "enabled": True,
-            }
-        )
-
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source = root / "resource.xlsx"
             output = root / "result.xlsx"
             frame = pd.DataFrame(
                 [
-                    ["批号", "基差", "长度", "马值", "未配置列"],
-                    ["A009", 350, 29.5, "4.1(A)", "原始备注"],
-                    ["A010", 350, 29.5, "4.1(Z)", "异常备注"],
+                    ["批号", "基差", "长度", "马值", "颜色级", "未配置列"],
+                    ["A009", 350, 29.5, "4.1(A)", "31", "原始备注"],
+                    ["A010", 350, 29.5, "4.1(Z)", "未知色", "异常备注"],
                 ]
             )
             frame.to_excel(source, index=False, header=False)
@@ -403,9 +417,26 @@ class FilteringRulesTest(unittest.TestCase):
 
             issue_frame = workbook["识别异常"]
             self.assertIn("数据规则未覆盖", issue_frame["异常类型"].tolist())
-            self.assertIn("4.1(Z)", issue_frame["原值"].fillna("").tolist())
+            self.assertIn("未知色", issue_frame["原值"].fillna("").tolist())
             self.assertNotIn("列名未覆盖", issue_frame["异常类型"].tolist())
             self.assertNotIn("未配置列", issue_frame["原列名"].fillna("").tolist())
+
+    def test_unmapped_column_that_looks_like_known_alias_is_reported(self) -> None:
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "颜色级1", "未配置列"],
+                ["A011", 350, 29.5, 4.1, "白棉3级", "原始备注"],
+            ]
+        )
+
+        result = process_sheet_result(raw_frame)
+
+        issue_frame = result.issue_frame
+        self.assertIn("列名未覆盖", issue_frame["异常类型"].tolist())
+        self.assertTrue(
+            any("颜色级1" in column for column in issue_frame["原列名"].fillna(""))
+        )
+        self.assertNotIn("未配置列", issue_frame["原列名"].fillna("").tolist())
 
     def test_unique_output_path_starts_at_one_and_skips_taken(self) -> None:
         from cotton_filter_app.file_utils import unique_output_path
@@ -430,17 +461,7 @@ class FilteringRulesTest(unittest.TestCase):
         repository.create_data_rule(
             {
                 "field_name": "马值",
-                "rule_type": "value_alias",
-                "match_value": "A",
-                "output_value": "A",
-                "enabled": True,
-            }
-        )
-        repository.create_data_rule(
-            {
-                "field_name": "马值",
                 "rule_type": "filter_range",
-                "match_value": "A",
                 "min_value": 5,
                 "enabled": True,
             }

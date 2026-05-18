@@ -22,6 +22,8 @@ RULE_DB_ENV = "COTTON_FILTER_RULE_DB"
 DEFAULT_DB_NAME = "rules.sqlite3"
 RULE_EXPORT_VERSION = 1
 DATA_RULE_TYPES = {"value_alias", "score_range", "filter_range", "keyword_filter"}
+VALUE_ALIAS_FIELDS = {"颜色级"}
+REMOVED_RULE_FIELDS = {"批号", "仓库"}
 DEFAULT_SEEDED_KEY = "default_rules_seeded"
 DEFAULT_REQUIRED_FIELDS = ("基差", "长度", "马值")
 DEFAULT_OUTPUT_FIELDS = (
@@ -266,8 +268,6 @@ def default_column_rules() -> list[ColumnRule]:
             "mic值",
         ],
         "整齐度": ["整齐度", "长整", "整齐度指数", "长度整齐度", "平均整齐度"],
-        "批号": ["批号"],
-        "仓库": ["仓库", "仓储地", "库点", "存放仓库"],
     }
 
     rules: list[ColumnRule] = []
@@ -409,6 +409,9 @@ class RuleRepository:
             connection.commit()
             self.seed_defaults(connection, force=False)
             self.normalize_color_grade_aliases(connection)
+            self.remove_disabled_rule_fields(connection)
+            self.remove_non_color_value_alias_rules(connection)
+            self.clear_numeric_range_match_values(connection)
             self.delete_legacy_interval_rules(connection)
             connection.commit()
 
@@ -460,16 +463,54 @@ class RuleRepository:
                 (standard_value, utc_now(), row["id"]),
             )
 
-    def delete_legacy_interval_rules(self, connection: sqlite3.Connection) -> None:
-        """删除未绑定适用值的旧默认区间规则。"""
+    def remove_non_color_value_alias_rules(self, connection: sqlite3.Connection) -> None:
+        """删除非颜色级字段的旧值别名规则。"""
 
         connection.execute(
             f"""
             DELETE FROM {DATA_RULE_TABLE}
-            WHERE rule_type IN ('score_range', 'filter_range')
-              AND match_key = ''
+            WHERE rule_type = 'value_alias' AND field_name != '颜色级'
             """
         )
+
+    def remove_disabled_rule_fields(self, connection: sqlite3.Connection) -> None:
+        """删除不再维护规则的字段。"""
+
+        placeholders = ", ".join("?" for _ in REMOVED_RULE_FIELDS)
+        fields = tuple(REMOVED_RULE_FIELDS)
+        connection.execute(
+            f"""
+            DELETE FROM {COLUMN_RULE_TABLE}
+            WHERE field_name IN ({placeholders})
+            """,
+            fields,
+        )
+        connection.execute(
+            f"""
+            DELETE FROM {DATA_RULE_TABLE}
+            WHERE field_name IN ({placeholders})
+            """,
+            fields,
+        )
+
+    def clear_numeric_range_match_values(self, connection: sqlite3.Connection) -> None:
+        """数值字段区间不再使用适用值。"""
+
+        connection.execute(
+            f"""
+            UPDATE {DATA_RULE_TABLE}
+            SET match_value = '', match_key = '', updated_at = ?
+            WHERE rule_type IN ('score_range', 'filter_range')
+              AND field_name != '颜色级'
+              AND match_key != ''
+            """,
+            (utc_now(),),
+        )
+
+    def delete_legacy_interval_rules(self, connection: sqlite3.Connection) -> None:
+        """保留兼容入口；无适用值的数值区间现在是有效规则。"""
+
+        return None
 
     def load_ruleset(self) -> RuleSet:
         self.initialize()
@@ -652,10 +693,12 @@ class RuleRepository:
         column_rules = [
             self._column_rule_from_payload(item)
             for item in self._payload_list(payload, "column_rules")
+            if str(item.get("field_name") or "").strip() not in REMOVED_RULE_FIELDS
         ]
         data_rules = [
             self._data_rule_from_import_payload(item)
             for item in self._payload_list(payload, "data_rules")
+            if str(item.get("field_name") or "").strip() not in REMOVED_RULE_FIELDS
         ]
         self._validate_imported_data_rules(data_rules)
 
@@ -668,6 +711,9 @@ class RuleRepository:
                 self._insert_data_rule(connection, rule, ignore_duplicates=False)
             self._mark_default_seeded(connection)
             self.normalize_color_grade_aliases(connection)
+            self.remove_disabled_rule_fields(connection)
+            self.remove_non_color_value_alias_rules(connection)
+            self.clear_numeric_range_match_values(connection)
             self.delete_legacy_interval_rules(connection)
             connection.commit()
 
@@ -764,6 +810,8 @@ class RuleRepository:
         alias = str(payload.get("alias") or "").strip()
         if not field_name:
             raise ValueError("标准字段不能为空")
+        if field_name in REMOVED_RULE_FIELDS:
+            raise ValueError("该字段不再维护列名规则")
         if not alias:
             raise ValueError("列名别名不能为空")
 
@@ -783,12 +831,16 @@ class RuleRepository:
         rule_type = str(payload.get("rule_type") or "").strip()
         if not field_name:
             raise ValueError("字段不能为空")
+        if field_name in REMOVED_RULE_FIELDS:
+            raise ValueError("该字段不再维护数据规则")
         if rule_type not in DATA_RULE_TYPES:
             raise ValueError("数据规则类型不支持")
 
         match_value = str(payload.get("match_value") or "").strip()
         output_value = str(payload.get("output_value") or "").strip()
         if rule_type == "value_alias":
+            if field_name not in VALUE_ALIAS_FIELDS:
+                raise ValueError("只有颜色级支持值别名")
             if not match_value:
                 raise ValueError("值别名规则必须填写匹配值")
             if not output_value and field_name == "颜色级":
@@ -796,7 +848,7 @@ class RuleRepository:
             if not output_value:
                 raise ValueError("值别名规则必须填写输出值")
         elif rule_type in {"score_range", "filter_range"}:
-            if not match_value:
+            if field_name in VALUE_ALIAS_FIELDS and not match_value:
                 raise ValueError("区间规则必须选择适用值")
             if (
                 self._optional_float(payload.get("min_value")) is None
@@ -809,6 +861,8 @@ class RuleRepository:
         score_delta = self._optional_int(payload.get("score_delta"))
         if rule_type == "score_range" and score_delta is None:
             raise ValueError("评分区间必须填写加减分")
+        if rule_type in {"score_range", "filter_range"} and field_name not in VALUE_ALIAS_FIELDS:
+            match_value = ""
         if not rule_name:
             rule_name = self._default_data_rule_name(field_name, rule_type, match_value)
 
@@ -838,7 +892,11 @@ class RuleRepository:
             if rule.rule_type == "value_alias" and rule.enabled
         }
         for rule in data_rules:
+            if rule.rule_type == "value_alias" and rule.field_name not in VALUE_ALIAS_FIELDS:
+                raise ValueError("只有颜色级支持值别名")
             if rule.rule_type not in {"score_range", "filter_range"}:
+                continue
+            if rule.field_name not in VALUE_ALIAS_FIELDS:
                 continue
             if (rule.field_name, normalize_text(rule.match_value)) not in alias_outputs:
                 raise ValueError("适用值必须来自当前字段的值别名输出值")
@@ -849,6 +907,8 @@ class RuleRepository:
         rule_type = str(payload.get("rule_type") or "").strip()
         if not field_name:
             raise ValueError("字段不能为空")
+        if field_name in REMOVED_RULE_FIELDS:
+            raise ValueError("该字段不再维护数据规则")
         if rule_type not in DATA_RULE_TYPES:
             raise ValueError("数据规则类型不支持")
 
@@ -858,16 +918,23 @@ class RuleRepository:
         max_value = self._optional_float(payload.get("max_value"))
         score_delta = self._optional_int(payload.get("score_delta"))
         if rule_type == "value_alias":
+            if field_name not in VALUE_ALIAS_FIELDS:
+                raise ValueError("只有颜色级支持值别名")
             if not match_value:
                 raise ValueError("值别名规则必须填写匹配值")
             if not output_value and field_name == "颜色级":
                 output_value = standard_color_grade_value(match_value)
             if not output_value:
                 raise ValueError("值别名规则必须填写输出值")
-        if rule_type in {"score_range", "filter_range"} and not match_value:
+        if (
+            rule_type in {"score_range", "filter_range"}
+            and field_name in VALUE_ALIAS_FIELDS
+            and not match_value
+        ):
             raise ValueError("区间规则必须选择适用值")
         if (
             rule_type in {"score_range", "filter_range"}
+            and field_name in VALUE_ALIAS_FIELDS
             and not self._value_alias_output_exists(
                 field_name,
                 match_value,
@@ -884,6 +951,8 @@ class RuleRepository:
             raise ValueError("评分区间必须填写加减分")
         if rule_type == "keyword_filter" and not match_value:
             raise ValueError("关键词过滤必须填写关键词")
+        if rule_type in {"score_range", "filter_range"} and field_name not in VALUE_ALIAS_FIELDS:
+            match_value = ""
         if not rule_name:
             rule_name = self._default_data_rule_name(field_name, rule_type, match_value)
 

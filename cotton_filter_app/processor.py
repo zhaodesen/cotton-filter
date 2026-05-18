@@ -9,7 +9,7 @@ import pandas as pd
 
 from .header import build_column_map, find_header_row
 from .models import ColumnMap, ProcessedRow, Record, SheetProcessResult
-from .rules import DataRule, RuleSet, load_ruleset, matches_range
+from .rules import ColumnRule, DataRule, RuleSet, load_ruleset, matches_range
 from .scoring import extract_color_percent, parse_float, score_record
 from .text_utils import normalize_text
 
@@ -178,6 +178,69 @@ def issue_row(
     return row_data
 
 
+def find_similar_column_rule(
+    column_name: str,
+    rule_set: RuleSet,
+) -> ColumnRule | None:
+    """查找疑似已有列名规则但未精确命中的表头。"""
+
+    column_key = normalize_text(column_name)
+    if not column_key:
+        return None
+
+    candidates = [
+        rule
+        for rule in rule_set.enabled_column_rules()
+        if rule.alias_key
+        and rule.alias_key != column_key
+        and column_key.startswith(rule.alias_key)
+    ]
+    if not candidates:
+        return None
+    return sorted(
+        candidates,
+        key=lambda rule: (len(rule.alias_key), -rule.sort_order, -(rule.id or 0)),
+        reverse=True,
+    )[0]
+
+
+def append_unmapped_column_issues(
+    issue_rows: list[Record],
+    headers: list[str],
+    column_map: ColumnMap,
+    color_columns: ColorColumns,
+    rule_set: RuleSet,
+) -> None:
+    """提示疑似列名规则缺失的原始列。"""
+
+    mapped_columns = set(column_map.values())
+    color_column_indexes = {column_index for column_index, _ in color_columns}
+    for column_index, original_column in enumerate(headers):
+        if (
+            not original_column
+            or column_index in mapped_columns
+            or column_index in color_column_indexes
+        ):
+            continue
+
+        similar_rule = find_similar_column_rule(original_column, rule_set)
+        if similar_rule is None:
+            continue
+
+        issue_rows.append(
+            issue_row(
+                issue_type="列名未覆盖",
+                message=(
+                    f"该原始列名疑似 {similar_rule.field_name}，"
+                    "但未命中列名规则，请在列名规则中新增对应别名"
+                ),
+                headers=headers,
+                field_name=similar_rule.field_name,
+                original_column=original_column,
+            )
+        )
+
+
 def value_alias_rules_exist(rule_set: RuleSet, field_name: str) -> bool:
     """判断某字段是否有值别名规则。"""
 
@@ -333,14 +396,14 @@ def filter_rule_matches(
     if rule.field_name == "与基差差距":
         source_value = row.get("_与基差差距")
         numeric_value = parse_float(source_value, default=float("nan"))
+    elif rule.field_name == "颜色级":
+        source_value = row.get(rule.field_name)
+        numeric_value = extract_color_percent(source_value, rule, rule_set)
     else:
         source_value = row.get(rule.field_name)
         if not rule_set.rule_matches_value(rule, source_value):
             return False
-        if rule.field_name == "颜色级":
-            numeric_value = extract_color_percent(source_value, rule, rule_set)
-        else:
-            numeric_value = parse_float(source_value, default=float("nan"))
+        numeric_value = parse_float(source_value, default=float("nan"))
 
     if pd.isna(numeric_value):
         return False
@@ -430,6 +493,13 @@ def process_sheet_result(
     color_columns = detect_color_columns(raw_frame, header_row, column_map, rule_set)
     headers = build_original_headers(raw_frame, header_row, color_columns)
     issue_rows: list[Record] = []
+    append_unmapped_column_issues(
+        issue_rows,
+        headers,
+        column_map,
+        color_columns,
+        rule_set,
+    )
 
     missing_columns = [
         column_name for column_name in rule_set.required_fields if column_name not in column_map

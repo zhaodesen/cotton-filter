@@ -16,6 +16,7 @@ from .text_utils import normalize_text
 NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
 PERCENT_RE = re.compile(r"([-+]?\d+(?:\.\d+)?)\s*[%％]")
 COLOR_RATIO_RE = re.compile(r"[:：]\s*([-+]?\d+(?:\.\d+)?)\s*(?:[%％])?")
+COLOR_SEGMENT_SEPARATORS = r",，、;；\s"
 
 
 def parse_float(value: Any, default: float = 0.0) -> float:
@@ -75,6 +76,45 @@ def extract_max_color_percent(
     return 0.0
 
 
+def color_aliases_for_target(target: str, rule_set: RuleSet) -> list[str]:
+    """返回某个标准颜色级对应的所有匹配写法。"""
+
+    target_output = rule_set.value_alias_output("颜色级", target) or target
+    target_output_key = normalize_text(target_output)
+    aliases = [target, target_output]
+
+    for rule in rule_set.enabled_data_rules():
+        if rule.rule_type != "value_alias" or rule.field_name != "颜色级":
+            continue
+        output_value = rule.output_value or rule.match_value
+        if normalize_text(output_value) == target_output_key:
+            aliases.extend([rule.match_value, output_value])
+
+    seen: set[str] = set()
+    unique_aliases: list[str] = []
+    for alias in aliases:
+        alias_text = unicodedata.normalize("NFKC", str(alias)).strip()
+        alias_key = normalize_text(alias_text)
+        if not alias_key or alias_key in seen:
+            continue
+        seen.add(alias_key)
+        unique_aliases.append(alias_text)
+
+    return sorted(unique_aliases, key=len, reverse=True)
+
+
+def extract_labeled_color_percent(text: str, label: str) -> float | None:
+    """从组合颜色级文本中提取指定标签后的百分比。"""
+
+    pattern = (
+        rf"(?:^|[{COLOR_SEGMENT_SEPARATORS}])\s*"
+        + re.escape(label)
+        + r"\s*[:：]\s*([-+]?\d+(?:\.\d+)?)\s*[%％]?"
+    )
+    match = re.search(pattern, text)
+    return float(match.group(1)) if match else None
+
+
 def extract_color_percent(
     value: Any,
     rule: DataRule,
@@ -103,14 +143,12 @@ def extract_color_percent(
         text = unicodedata.normalize("NFKC", str(value)).strip()
 
     if not text or text in {"-", "--", "—", "无"}:
-        return 0.0
+        return float("nan")
 
-    match = re.search(
-        re.escape(target) + r"\s*[:：]?\s*([-+]?\d+(?:\.\d+)?)\s*[%％]?",
-        text,
-    )
-    if match:
-        return float(match.group(1))
+    for alias in color_aliases_for_target(target, active_rule_set):
+        percent = extract_labeled_color_percent(text, alias)
+        if percent is not None:
+            return percent
 
     target_output = active_rule_set.value_alias_output("颜色级", target)
     cell_output = active_rule_set.value_alias_output("颜色级", text)
@@ -118,7 +156,7 @@ def extract_color_percent(
         return 100.0
     if normalize_text(text) == normalize_text(target):
         return 100.0
-    return 0.0
+    return float("nan")
 
 
 def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
@@ -129,12 +167,14 @@ def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
 
     for rule in active_rule_set.score_rules():
         raw_value = record.get(rule.field_name)
-        if not active_rule_set.rule_matches_value(rule, raw_value):
-            continue
         if rule.field_name == "颜色级":
             value = extract_color_percent(raw_value, rule, active_rule_set)
         else:
+            if not active_rule_set.rule_matches_value(rule, raw_value):
+                continue
             value = parse_float(raw_value)
+        if pd.isna(value):
+            continue
         if matches_range(value, rule):
             score += rule.score_delta or 0
 
