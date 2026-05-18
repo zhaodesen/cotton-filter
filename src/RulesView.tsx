@@ -52,6 +52,7 @@ const DEFAULT_STANDARD_FIELDS = [
   "强力",
   "马值",
   "整齐度",
+  "毛重",
 ];
 
 const VALUE_ALIAS_FIELDS = ["颜色级"];
@@ -179,6 +180,9 @@ export default function RulesView({
   const [dataForm, setDataForm] = useState<DataRuleForm>(DEFAULT_DATA_FORM);
   const [aliasDialogField, setAliasDialogField] = useState<string | null>(null);
   const [aliasValue, setAliasValue] = useState("");
+  const [standardFieldDialogOpen, setStandardFieldDialogOpen] = useState(false);
+  const [standardFieldName, setStandardFieldName] = useState("");
+  const [standardFieldAlias, setStandardFieldAlias] = useState("");
   const [dataDialogField, setDataDialogField] = useState<string | null>(null);
   const [detailRule, setDetailRule] = useState<DataRule | null>(null);
   const [activePanel, setActivePanel] = useState<RulesPanel>("columns");
@@ -193,11 +197,14 @@ export default function RulesView({
   }, [columnRules]);
 
   const dataFields = useMemo(() => {
-    const extra = dataRules.map((rule) => rule.field_name);
+    const extra = [
+      ...columnRules.map((rule) => rule.field_name),
+      ...dataRules.map((rule) => rule.field_name),
+    ];
     return Array.from(
       new Set([...DEFAULT_STANDARD_FIELDS, ...extra]),
     ).filter((field) => !EXCLUDED_DATA_FIELDS.has(field));
-  }, [dataRules]);
+  }, [columnRules, dataRules]);
 
   const columnRulesByField = useMemo(() => {
     const groups = new Map<string, ColumnRule[]>();
@@ -295,6 +302,19 @@ export default function RulesView({
     setAliasValue("");
   }
 
+  function openStandardFieldDialog() {
+    setStandardFieldDialogOpen(true);
+    setStandardFieldName("");
+    setStandardFieldAlias("");
+    setErrorText("");
+  }
+
+  function closeStandardFieldDialog() {
+    setStandardFieldDialogOpen(false);
+    setStandardFieldName("");
+    setStandardFieldAlias("");
+  }
+
   function openDataDialog(
     fieldName: string,
     ruleType: DataRule["rule_type"],
@@ -337,6 +357,36 @@ export default function RulesView({
       await reloadRules();
       onLog(`列名别名已保存: ${aliasDialogField} / ${alias}`);
       closeAliasDialog();
+    } catch (error) {
+      setErrorText(formatError(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleStandardFieldSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const fieldName = standardFieldName.trim();
+    const alias = standardFieldAlias.trim() || fieldName;
+    if (!baseUrl || !fieldName || !alias || isSaving) {
+      return;
+    }
+    if (EXCLUDED_COLUMN_FIELDS.has(fieldName)) {
+      setErrorText("该字段不在列名规则中维护");
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorText("");
+    try {
+      await createColumnRule(baseUrl, {
+        field_name: fieldName,
+        alias,
+        enabled: true,
+      });
+      await reloadRules();
+      onLog(`标准字段已保存: ${fieldName} / ${alias}`);
+      closeStandardFieldDialog();
     } catch (error) {
       setErrorText(formatError(error));
     } finally {
@@ -518,6 +568,17 @@ export default function RulesView({
                   : "评分与过滤区间"}
             </h2>
             <div className="rules-transfer-actions">
+              {activePanel === "columns" ? (
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={openStandardFieldDialog}
+                  disabled={!backendReady || isSaving}
+                >
+                  <Plus size={15} />
+                  新增标准字段
+                </button>
+              ) : null}
               <button
                 className="ghost-button"
                 type="button"
@@ -759,6 +820,65 @@ export default function RulesView({
                   className="primary-button"
                   type="submit"
                   disabled={!backendReady || isSaving || !aliasValue.trim()}
+                >
+                  保存
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {standardFieldDialogOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="standard-field-dialog-title"
+          >
+            <div className="modal-header">
+              <h2 id="standard-field-dialog-title">新增标准字段</h2>
+              <button
+                className="icon-button"
+                type="button"
+                title="关闭"
+                onClick={closeStandardFieldDialog}
+                disabled={isSaving}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <form className="modal-form" onSubmit={handleStandardFieldSubmit}>
+              <label>
+                <span>标准字段</span>
+                <input
+                  autoFocus
+                  value={standardFieldName}
+                  onChange={(event) => setStandardFieldName(event.target.value)}
+                  placeholder="例如 毛重"
+                />
+              </label>
+              <label>
+                <span>首个列名别名</span>
+                <input
+                  value={standardFieldAlias}
+                  onChange={(event) => setStandardFieldAlias(event.target.value)}
+                  placeholder="留空则使用标准字段"
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  onClick={closeStandardFieldDialog}
+                  disabled={isSaving}
+                >
+                  取消
+                </button>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={!backendReady || isSaving || !standardFieldName.trim()}
                 >
                   保存
                 </button>

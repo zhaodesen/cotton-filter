@@ -25,6 +25,7 @@ DATA_RULE_TYPES = {"value_alias", "score_range", "filter_range", "keyword_filter
 VALUE_ALIAS_FIELDS = {"颜色级"}
 REMOVED_RULE_FIELDS = {"批号", "仓库"}
 DEFAULT_SEEDED_KEY = "default_rules_seeded"
+GROSS_WEIGHT_COLUMN_SEEDED_KEY = "gross_weight_column_rules_seeded"
 DEFAULT_REQUIRED_FIELDS = ("基差", "长度", "马值")
 DEFAULT_OUTPUT_FIELDS = (
     "批号",
@@ -37,6 +38,7 @@ DEFAULT_OUTPUT_FIELDS = (
     "整齐度",
     "颜色级",
     "仓库",
+    "毛重",
 )
 COLOR_GRADE_PREFIXES = ("白棉", "淡点污棉", "淡黄染棉", "黄染棉")
 COLOR_GRADE_PREFIX_BY_CODE = {
@@ -268,6 +270,7 @@ def default_column_rules() -> list[ColumnRule]:
             "mic值",
         ],
         "整齐度": ["整齐度", "长整", "整齐度指数", "长度整齐度", "平均整齐度"],
+        "毛重": ["毛重", "毛重(吨)", "毛重（吨）"],
     }
 
     rules: list[ColumnRule] = []
@@ -408,6 +411,7 @@ class RuleRepository:
             )
             connection.commit()
             self.seed_defaults(connection, force=False)
+            self.seed_gross_weight_column_rules(connection)
             self.normalize_color_grade_aliases(connection)
             self.remove_disabled_rule_fields(connection)
             self.remove_non_color_value_alias_rules(connection)
@@ -439,6 +443,17 @@ class RuleRepository:
         finally:
             if owns_connection:
                 active_connection.close()
+
+    def seed_gross_weight_column_rules(self, connection: sqlite3.Connection) -> None:
+        """把新增的毛重列名规则补进已有本地规则库。"""
+
+        if self._metadata_enabled(connection, GROSS_WEIGHT_COLUMN_SEEDED_KEY):
+            return
+
+        for rule in default_column_rules():
+            if rule.field_name == "毛重":
+                self._insert_column_rule(connection, rule, ignore_duplicates=True)
+        self._mark_metadata_enabled(connection, GROSS_WEIGHT_COLUMN_SEEDED_KEY)
 
     def normalize_color_grade_aliases(self, connection: sqlite3.Connection) -> None:
         """修复已有颜色级值别名，把输出值归一为标准值。"""
@@ -764,14 +779,22 @@ class RuleRepository:
 
     @staticmethod
     def _default_seeded(connection: sqlite3.Connection) -> bool:
+        return RuleRepository._metadata_enabled(connection, DEFAULT_SEEDED_KEY)
+
+    @staticmethod
+    def _mark_default_seeded(connection: sqlite3.Connection) -> None:
+        RuleRepository._mark_metadata_enabled(connection, DEFAULT_SEEDED_KEY)
+
+    @staticmethod
+    def _metadata_enabled(connection: sqlite3.Connection, key: str) -> bool:
         row = connection.execute(
             f"SELECT value FROM {METADATA_TABLE} WHERE key = ?",
-            (DEFAULT_SEEDED_KEY,),
+            (key,),
         ).fetchone()
         return row is not None and str(row["value"]) == "1"
 
     @staticmethod
-    def _mark_default_seeded(connection: sqlite3.Connection) -> None:
+    def _mark_metadata_enabled(connection: sqlite3.Connection, key: str) -> None:
         connection.execute(
             f"""
             INSERT INTO {METADATA_TABLE} (key, value, updated_at)
@@ -779,7 +802,7 @@ class RuleRepository:
             ON CONFLICT(key) DO UPDATE SET value = excluded.value,
                 updated_at = excluded.updated_at
             """,
-            (DEFAULT_SEEDED_KEY, utc_now()),
+            (key, utc_now()),
         )
 
     def _insert_data_rule(

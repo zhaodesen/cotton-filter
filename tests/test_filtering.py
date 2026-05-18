@@ -353,6 +353,62 @@ class FilteringRulesTest(unittest.TestCase):
         assert result is not None
         self.assertEqual(result["颜色级"].tolist(), ["白棉3级"])
 
+    def test_gross_weight_column_can_filter_rows_below_41_tons(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "毛重",
+                "rule_type": "filter_range",
+                "min_value": 41,
+                "enabled": True,
+            }
+        )
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "毛重（吨）"],
+                ["A009", 350, 29.5, 4.1, 40.9],
+                ["A010", 350, 29.5, 4.1, 41],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result["毛重"].tolist(), [41])
+
+    def test_custom_standard_field_can_filter_after_column_rule_is_added(self) -> None:
+        repository = RuleRepository()
+        repository.create_column_rule(
+            {
+                "field_name": "含杂率",
+                "alias": "含杂率(%)",
+                "enabled": True,
+            }
+        )
+        repository.create_data_rule(
+            {
+                "field_name": "含杂率",
+                "rule_type": "filter_range",
+                "max_value": 2.0,
+                "enabled": True,
+            }
+        )
+        raw_frame = pd.DataFrame(
+            [
+                ["基差", "长度", "马值", "含杂率(%)"],
+                [350, 29.5, 4.1, 2.5],
+                [350, 29.5, 4.1, 1.8],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(len(result), 1)
+
     def test_same_field_filter_ranges_are_combined_as_or_per_grade(self) -> None:
         repository = RuleRepository()
         for grade, low in (("白棉1级", 60), ("白棉2级", 60), ("白棉3级", 80)):
