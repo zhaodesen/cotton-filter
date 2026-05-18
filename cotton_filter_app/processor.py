@@ -10,7 +10,7 @@ import pandas as pd
 from .header import build_column_map, find_header_row
 from .models import ColumnMap, ProcessedRow, Record, SheetProcessResult
 from .rules import DataRule, RuleSet, load_ruleset, matches_range
-from .scoring import extract_max_color_percent, parse_float, score_record
+from .scoring import extract_color_percent, parse_float, score_record
 from .text_utils import normalize_text
 
 ProgressLogger = Callable[[str], None]
@@ -257,12 +257,19 @@ def build_filter_mask(
     if not filter_rules:
         return pd.Series(True, index=frame.index)
 
-    mask = pd.Series(True, index=frame.index)
+    grouped: dict[str, list[DataRule]] = {}
     for rule in filter_rules:
-        mask = mask & frame.apply(
-            lambda row: filter_rule_matches(row, rule, rule_set),
+        grouped.setdefault(rule.field_name, []).append(rule)
+
+    mask = pd.Series(True, index=frame.index)
+    for field_rules in grouped.values():
+        field_mask = frame.apply(
+            lambda row: any(
+                filter_rule_matches(row, rule, rule_set) for rule in field_rules
+            ),
             axis=1,
         )
+        mask = mask & field_mask
     return mask
 
 
@@ -331,7 +338,7 @@ def filter_rule_matches(
         if not rule_set.rule_matches_value(rule, source_value):
             return False
         if rule.field_name == "颜色级":
-            numeric_value = extract_max_color_percent(source_value, rule_set)
+            numeric_value = extract_color_percent(source_value, rule, rule_set)
         else:
             numeric_value = parse_float(source_value, default=float("nan"))
 
@@ -437,21 +444,6 @@ def process_sheet_result(
             )
         )
 
-    mapped_columns = set(column_map.values())
-    color_column_indexes = {column_index for column_index, _ in color_columns}
-    for column_index, original_column in enumerate(headers):
-        if not original_column or column_index in mapped_columns or column_index in color_column_indexes:
-            continue
-        issue_rows.append(
-            issue_row(
-                issue_type="列名未覆盖",
-                message="该原始列名未被列名规则映射，会作为原始列保留但不参与评分筛选",
-                headers=headers,
-                field_name="",
-                original_column=original_column,
-            )
-        )
-
     if missing_columns:
         if log:
             log(f"{log_prefix}缺少必需字段: {', '.join(missing_columns)}，跳过")
@@ -519,7 +511,7 @@ def process_sheet_result(
         log(f"{log_prefix}命中筛选条件 {len(normal_frame)} 行")
     return SheetProcessResult(
         normal_frame=normal_frame,
-        issue_frame=pd.DataFrame(issue_rows),
+        issue_frame=pd.DataFrame(issue_rows, columns=ISSUE_COLUMNS),
     )
 
 
@@ -543,17 +535,13 @@ def filter_file(src: Path, dst: Path, log: ProgressLogger | None = None) -> int:
                 log(f"[{sheet_name}] 原始尺寸: {len(raw_frame)} 行 x {len(raw_frame.columns)} 列")
             result = process_sheet_result(raw_frame, log=log, sheet_name=sheet_name)
 
-            if len(result.normal_frame):
-                result.normal_frame.insert(0, "来源sheet", sheet_name)
-                sheet_results.append(result.normal_frame)
-            if len(result.issue_frame):
-                result.issue_frame.insert(0, "来源sheet", sheet_name)
-                issue_results.append(result.issue_frame)
+            normal_frame = result.normal_frame.copy()
+            normal_frame.insert(0, "来源sheet", sheet_name)
+            sheet_results.append(normal_frame)
 
-    if not sheet_results and not issue_results:
-        if log:
-            log("当前文件没有命中结果，不生成输出文件")
-        return 0
+            issue_frame = result.issue_frame.copy()
+            issue_frame.insert(0, "来源sheet", sheet_name)
+            issue_results.append(issue_frame)
 
     output_frame = (
         pd.concat(sheet_results, ignore_index=True)

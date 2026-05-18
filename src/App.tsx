@@ -19,10 +19,6 @@ import { expandTargets, filterExcelFilesStream } from "./api";
 import { BackendService, startBackend } from "./backend";
 import RulesView from "./RulesView";
 
-function mergeUnique(current: string[], incoming: string[]): string[] {
-  return Array.from(new Set([...current, ...incoming]));
-}
-
 function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -33,7 +29,6 @@ function formatError(error: unknown): string {
 export default function App() {
   const [apiBase, setApiBase] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"filter" | "rules">("filter");
-  const [files, setFiles] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>(["正在启动 Python 后端"]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,7 +38,6 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [backendReady, setBackendReady] = useState(false);
   const backendRef = useRef<BackendService | null>(null);
-  const filesRef = useRef<string[]>([]);
 
   function appendLog(message: string) {
     setLogs((current) => [...current, message]);
@@ -125,17 +119,12 @@ export default function App() {
       return;
     }
     const response = await expandTargets(apiBase, targets);
-    const existingFiles = new Set(filesRef.current);
-    const newFiles = response.files.filter((file) => !existingFiles.has(file));
-    if (!newFiles.length) {
-      appendLog("未发现新的 Excel 文件");
+    if (!response.files.length) {
+      appendLog("未发现可处理的 Excel 文件");
       return;
     }
-    const nextFiles = mergeUnique(filesRef.current, newFiles);
-    filesRef.current = nextFiles;
-    setFiles(nextFiles);
-    appendLog(`已加入 ${newFiles.length} 个 Excel 文件`);
-    await runFilterFor(newFiles);
+    appendLog(`本次选择 ${response.files.length} 个 Excel 文件`);
+    await runFilterFor(response.files);
   }
 
   async function selectFiles() {

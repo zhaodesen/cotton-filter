@@ -333,6 +333,36 @@ class FilteringRulesTest(unittest.TestCase):
         assert result is not None
         self.assertEqual(result["批号"].tolist(), ["A006"])
 
+    def test_same_field_filter_ranges_are_combined_as_or_per_grade(self) -> None:
+        repository = RuleRepository()
+        for grade, low in (("白棉1级", 60), ("白棉2级", 60), ("白棉3级", 80)):
+            repository.create_data_rule(
+                {
+                    "field_name": "颜色级",
+                    "rule_type": "filter_range",
+                    "match_value": grade,
+                    "min_value": low,
+                    "max_value": 100,
+                    "enabled": True,
+                }
+            )
+        raw_frame = pd.DataFrame(
+            [
+                ["批号", "基差", "长度", "马值", "颜色级"],
+                ["K1", 350, 29.5, 4.1, "白棉2级:2.2%，白棉3级:95.7%"],
+                ["K2", 350, 29.5, 4.1, "白棉1级:5.4%，白棉2级:94.1%，白棉3级:0.5%"],
+                ["K3", 350, 29.5, 4.1, "白棉2级:1.6%，白棉3级:68.8%"],
+            ]
+        )
+
+        result = process_sheet(raw_frame)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        # K1: 白棉3级 95.7>=80 命中；K2: 白棉2级 94.1>=60 命中；
+        # K3: 白棉2级 1.6<60 且 白棉3级 68.8<80 → 不命中（按本级别比例判定）。
+        self.assertEqual(result["批号"].tolist(), ["K1", "K2"])
+
     def test_filter_file_writes_result_and_issue_sheets_with_original_columns(self) -> None:
         repository = RuleRepository()
         repository.create_data_rule(
@@ -372,10 +402,103 @@ class FilteringRulesTest(unittest.TestCase):
             self.assertEqual(result_frame.loc[0, "未配置列"], "原始备注")
 
             issue_frame = workbook["识别异常"]
-            self.assertIn("列名未覆盖", issue_frame["异常类型"].tolist())
             self.assertIn("数据规则未覆盖", issue_frame["异常类型"].tolist())
-            self.assertIn("未配置列", issue_frame["原列名"].fillna("").tolist())
             self.assertIn("4.1(Z)", issue_frame["原值"].fillna("").tolist())
+            self.assertNotIn("列名未覆盖", issue_frame["异常类型"].tolist())
+            self.assertNotIn("未配置列", issue_frame["原列名"].fillna("").tolist())
+
+    def test_unique_output_path_starts_at_one_and_skips_taken(self) -> None:
+        from cotton_filter_app.file_utils import unique_output_path
+
+        with TemporaryDirectory() as temp_dir:
+            out_dir = Path(temp_dir)
+            src = Path("/somewhere/资源表.xlsx")
+
+            first = unique_output_path(out_dir, src)
+            self.assertEqual(first.name, "资源表.xlsx")
+
+            first.touch()
+            second = unique_output_path(out_dir, src)
+            self.assertEqual(second.name, "资源表_1.xlsx")
+
+            taken = {first, out_dir / "资源表_1.xlsx"}
+            third = unique_output_path(out_dir, src, taken=taken)
+            self.assertEqual(third.name, "资源表_2.xlsx")
+
+    def test_filter_file_writes_empty_workbook_when_no_rows_are_kept(self) -> None:
+        repository = RuleRepository()
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "value_alias",
+                "match_value": "A",
+                "output_value": "A",
+                "enabled": True,
+            }
+        )
+        repository.create_data_rule(
+            {
+                "field_name": "马值",
+                "rule_type": "filter_range",
+                "match_value": "A",
+                "min_value": 5,
+                "enabled": True,
+            }
+        )
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "resource.xlsx"
+            output = root / "result.xlsx"
+            pd.DataFrame(
+                [
+                    ["批号", "基差", "长度", "马值"],
+                    ["A001", 350, 29.5, "4.1(A)"],
+                ]
+            ).to_excel(source, index=False, header=False)
+
+            kept = filter_file(source, output)
+
+            self.assertEqual(kept, 0)
+            self.assertTrue(output.exists())
+            workbook = pd.read_excel(output, sheet_name=None)
+            self.assertEqual(len(workbook["筛选结果"]), 0)
+            self.assertEqual(len(workbook["识别异常"]), 0)
+
+    def test_locked_output_file_falls_back_to_next_name(self) -> None:
+        from cotton_filter_app import file_utils
+
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "resource.xlsx"
+            out_dir = root / "out"
+            pd.DataFrame(
+                [
+                    ["批号", "基差", "长度", "马值"],
+                    ["A001", 350, 29.5, 4.1],
+                ]
+            ).to_excel(source, index=False, header=False)
+
+            real_filter_file = file_utils.filter_file
+            attempts: list[str] = []
+
+            def flaky_filter_file(src, dst, log=None):
+                attempts.append(dst.name)
+                if len(attempts) == 1:
+                    raise PermissionError(f"locked: {dst.name}")
+                return real_filter_file(src, dst, log=log)
+
+            file_utils.filter_file = flaky_filter_file
+            try:
+                results = file_utils.filter_files([source], out_dir)
+            finally:
+                file_utils.filter_file = real_filter_file
+
+            self.assertIsNone(results[0].error)
+            self.assertIsNotNone(results[0].out)
+            assert results[0].out is not None
+            self.assertEqual(results[0].out.name, "resource_1.xlsx")
+            self.assertEqual(attempts, ["resource.xlsx", "resource_1.xlsx"])
 
 
 if __name__ == "__main__":

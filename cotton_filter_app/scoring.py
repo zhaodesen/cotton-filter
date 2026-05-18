@@ -9,7 +9,8 @@ from typing import Any
 import pandas as pd
 
 from .models import Record
-from .rules import RuleSet, load_ruleset, matches_range
+from .rules import DataRule, RuleSet, load_ruleset, matches_range
+from .text_utils import normalize_text
 
 
 NUMBER_RE = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -74,6 +75,52 @@ def extract_max_color_percent(
     return 0.0
 
 
+def extract_color_percent(
+    value: Any,
+    rule: DataRule,
+    rule_set: RuleSet | None = None,
+) -> float:
+    """提取颜色级文本中规则适用级别(如“白棉3级”)的百分比。
+
+    规则没有指定适用值时回退到最大百分比；指定了适用值时只看该级别的占比，
+    避免用其它级别的比例去判定本级别区间。
+    """
+
+    active_rule_set = rule_set or load_ruleset()
+    target = (rule.match_value or "").strip()
+    if not target:
+        return extract_max_color_percent(value, active_rule_set)
+
+    if value is None or pd.isna(value):
+        return 0.0
+
+    if isinstance(value, (int, float)):
+        numeric_value = float(value)
+        if not numeric_value.is_integer():
+            return numeric_value if 0 <= numeric_value <= 100 else 0.0
+        text = str(int(numeric_value))
+    else:
+        text = unicodedata.normalize("NFKC", str(value)).strip()
+
+    if not text or text in {"-", "--", "—", "无"}:
+        return 0.0
+
+    match = re.search(
+        re.escape(target) + r"\s*[:：]?\s*([-+]?\d+(?:\.\d+)?)\s*[%％]?",
+        text,
+    )
+    if match:
+        return float(match.group(1))
+
+    target_output = active_rule_set.value_alias_output("颜色级", target)
+    cell_output = active_rule_set.value_alias_output("颜色级", text)
+    if cell_output is not None and cell_output == (target_output or target):
+        return 100.0
+    if normalize_text(text) == normalize_text(target):
+        return 100.0
+    return 0.0
+
+
 def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
     """按当前业务规则计算单条棉花资源得分。"""
 
@@ -85,7 +132,7 @@ def score_record(record: Record, rule_set: RuleSet | None = None) -> int:
         if not active_rule_set.rule_matches_value(rule, raw_value):
             continue
         if rule.field_name == "颜色级":
-            value = extract_max_color_percent(raw_value, active_rule_set)
+            value = extract_color_percent(raw_value, rule, active_rule_set)
         else:
             value = parse_float(raw_value)
         if matches_range(value, rule):

@@ -12,17 +12,29 @@ from .processor import filter_file
 ProgressLogger = Callable[[str], None]
 
 
-def unique_output_path(out_dir: Path, src: Path) -> Path:
-    """生成不覆盖既有文件的输出路径。"""
+def unique_output_path(
+    out_dir: Path,
+    src: Path,
+    taken: set[Path] | None = None,
+) -> Path:
+    """生成唯一且不覆盖既有文件的输出路径。
 
+    首选与源文件同名；若已存在或已在 `taken` 中(例如上一轮写入被占用)，
+    则在源文件名后追加 `_1`、`_2` … 直到找到可用名称。
+    """
+
+    skip = taken or set()
     candidate = out_dir / src.name
-    counter = 2
+    counter = 1
 
-    while candidate.exists():
+    while candidate.exists() or candidate in skip:
         candidate = out_dir / f"{src.stem}_{counter}{src.suffix}"
         counter += 1
 
     return candidate
+
+
+MAX_OUTPUT_RETRY = 50
 
 
 def iter_filter_files(
@@ -39,8 +51,22 @@ def iter_filter_files(
         try:
             if log:
                 log(f"处理文件 {index}/{total}: {src.name}")
-            out = unique_output_path(out_dir, src)
-            kept = filter_file(src, out, log=log)
+
+            taken: set[Path] = set()
+            while True:
+                out = unique_output_path(out_dir, src, taken=taken)
+                try:
+                    kept = filter_file(src, out, log=log)
+                    break
+                except OSError as write_error:
+                    taken.add(out)
+                    if len(taken) >= MAX_OUTPUT_RETRY:
+                        raise
+                    if log:
+                        log(
+                            f"目标文件无法写入(可能正被打开): {out.name}，"
+                            f"改用新文件名重试 … ({write_error})"
+                        )
 
             result = FileResult(
                 src=src,
