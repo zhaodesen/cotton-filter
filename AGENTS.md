@@ -29,6 +29,7 @@
 - 主窗口使用无原生标题栏配置，避免系统标题栏颜色与应用主题不一致。
 - 桌面端运行时常驻系统托盘；关闭主窗口只隐藏到托盘，不直接退出应用。
 - 托盘左键或“显示窗口”恢复主窗口；只有托盘“退出”才结束应用和本地后端。
+- 前端主题使用白色背景、黑色文字、黑色主要操作色和 Noto Sans SC 本地字体。
 - 支持 `.xlsx` 和 `.xls`。
 - 必需字段是 `基差`、`长度`、`马值`。
 - 自动扫描前置行定位真实表头；列名规则只做标准化后的精确匹配。
@@ -84,4 +85,5 @@
 - Tauri 通过 `@tauri-apps/plugin-dialog`、`plugin-opener`、`plugin-shell` 选择文件、打开目录和启动 sidecar。
 - Python 本地服务只绑定 `127.0.0.1`。
 - CI 构建入口是 Tauri。
+- Windows 安装包图标使用 `assets/icon.png` 通过 `npm run tauri icon assets/icon.png` 生成的 `src-tauri/icons` 图标集。
 - 发布自动更新依赖 `TAURI_SIGNING_PRIVATE_KEY`；本机私钥路径是 `/Users/zhaodesen/.tauri/cotton-filter.key`，不要提交。

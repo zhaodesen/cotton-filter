@@ -1,66 +1,52 @@
 /* ============================================================
-   cotton-filter · 深色精致主题
-   设计 token 系统 — 改色/改质感只需调这里的变量
+   cotton-filter · 白色工作台主题
    ============================================================ */
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* —— 表面层次：背景 < 面板 < 悬浮态，逐级提亮制造深度 —— */
-  --bg: #0f1311;
-  --surface: #171c1a;
-  --surface-raised: #1c2320;
-  --surface-hover: #232b27;
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f7f8f8;
+  --surface-hover: #eef2f1;
 
-  /* —— 描边：极低对比 + 顶部内高光（模拟玻璃边缘的光）—— */
-  --border: rgba(255, 255, 255, 0.07);
-  --border-strong: rgba(255, 255, 255, 0.12);
-  --edge-light: rgba(255, 255, 255, 0.05);
+  --border: rgba(15, 23, 20, 0.09);
+  --border-strong: rgba(15, 23, 20, 0.16);
+  --edge-light: rgba(255, 255, 255, 0.9);
 
-  /* —— 文字层级 —— */
-  --text: #e8ede9;
-  --text-muted: #98a39c;
-  --text-subtle: #6c766f;
+  --text: #111816;
+  --text-muted: #4e5a55;
+  --text-subtle: #818b86;
 
-  /* —— 强调色：翡翠绿（深色下提亮 + 发光）—— */
-  --accent: #1fc99e;
-  --accent-strong: #15b389;
-  --accent-press: #119a76;
-  --accent-soft: rgba(31, 201, 158, 0.13);
-  --accent-border: rgba(31, 201, 158, 0.42);
-  --on-accent: #04130e;
+  --accent: #111816;
+  --accent-strong: #050807;
+  --accent-press: #000000;
+  --accent-soft: rgba(17, 24, 22, 0.08);
+  --accent-border: rgba(17, 24, 22, 0.24);
+  --on-accent: #ffffff;
 
-  /* —— 语义色 —— */
   --ok: #36d399;
-  --danger: #f9776c;
+  --danger: #d92d20;
 
-  /* —— 圆角 —— */
   --r-sm: 8px;
   --r-md: 11px;
   --r-lg: 14px;
 
-  /* —— 投影：低透明度 + 大扩散，深色下要"软" —— */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 10px 28px -10px rgba(0, 0, 0, 0.6);
-  --shadow-pop: 0 18px 44px -14px rgba(0, 0, 0, 0.65);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 20, 0.06);
+  --shadow-md: 0 14px 32px -22px rgba(15, 23, 20, 0.28);
+  --shadow-pop: 0 24px 54px -28px rgba(15, 23, 20, 0.3);
 
-  /* ════════════════════════════════════════════════════════
-     ▼ 签名发光强度 —— 这里的取值决定整个 App 的"气场"
-       这是一个纯品味决策，留给你定夺（见对话说明）。
-       当前为克制的默认值，可直接微调下面两行。
-     ════════════════════════════════════════════════════════ */
   --glow-accent: 0 0 0 1px var(--accent-border),
-    0 8px 24px -10px rgba(31, 201, 158, 0.45);
-  --glow-ambient: rgba(31, 201, 158, 0.07);
-  /* ════════════════════════════════════════════════════════ */
+    0 10px 26px -18px rgba(17, 24, 22, 0.32);
+  --glow-ambient: rgba(17, 24, 22, 0.04);
 
-  /* —— 动效 —— */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --dur: 180ms;
+  --dur-slow: 280ms;
 
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    "Segoe UI", "Microsoft YaHei", Inter, system-ui, sans-serif;
+    "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", system-ui, sans-serif;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -78,14 +64,7 @@ body {
   min-width: 900px;
   min-height: 100vh;
   color: var(--text);
-  /* 顶部柔和环境光晕 —— 平面背景的"科技感"来源 */
-  background:
-    radial-gradient(
-      1200px 520px at 50% -8%,
-      var(--glow-ambient),
-      transparent 70%
-    ),
-    var(--bg);
+  background: var(--bg);
 }
 
 ::selection {
@@ -93,10 +72,9 @@ body {
   color: var(--text);
 }
 
-/* —— 自定义滚动条：深色下细、低调、悬浮才显眼 —— */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: rgba(15, 23, 20, 0.22) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -107,12 +85,12 @@ body {
 *::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 20, 0.18);
   background-clip: content-box;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(15, 23, 20, 0.3);
   background-clip: content-box;
 }
 
@@ -145,7 +123,7 @@ button {
 }
 
 button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(15, 23, 20, 0.2);
   background: var(--surface-hover);
   transform: translateY(-1px);
 }
@@ -158,7 +136,7 @@ button:active:not(:disabled) {
 button:disabled {
   cursor: not-allowed;
   color: var(--text-subtle);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(15, 23, 20, 0.03);
   border-color: var(--border);
 }
 
@@ -202,8 +180,8 @@ button:focus-visible {
 }
 
 .primary-button:disabled {
-  background: rgba(31, 201, 158, 0.16);
-  color: rgba(255, 255, 255, 0.4);
+  background: rgba(17, 24, 22, 0.08);
+  color: rgba(15, 23, 20, 0.4);
   box-shadow: none;
 }
 
@@ -216,6 +194,7 @@ button:focus-visible {
   grid-template-rows: 48px auto minmax(0, 1fr);
   gap: 0;
   height: 100vh;
+  animation: app-enter 260ms var(--ease) both;
 }
 
 .app-shell.rules-mode {
@@ -244,6 +223,9 @@ textarea {
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .window-drag-region {
@@ -269,6 +251,9 @@ textarea {
   border-radius: 0;
   color: var(--text-muted);
   background: transparent;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
 }
 
 .window-control-btn:hover:not(:disabled) {
@@ -287,6 +272,7 @@ textarea {
   place-items: center;
   min-height: 0;
   padding: 0 28px 26px;
+  animation: content-rise 300ms var(--ease) both;
 }
 
 .filter-hero-inner {
@@ -312,13 +298,19 @@ textarea {
   font-size: 15px;
   font-weight: 650;
   letter-spacing: 0.01em;
-  box-shadow: 0 4px 14px -8px rgba(31, 201, 158, 0.5);
+  box-shadow: 0 8px 20px -14px rgba(17, 24, 22, 0.45);
+  transition:
+    background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    filter var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .hero-add:hover:not(:disabled) {
   background: var(--accent);
   filter: brightness(1.06);
-  transform: translateY(-1px);
+  box-shadow: 0 14px 28px -18px rgba(17, 24, 22, 0.62);
+  transform: translateY(-2px);
 }
 
 .hero-add:active:not(:disabled) {
@@ -329,7 +321,7 @@ textarea {
 
 .hero-add:disabled {
   color: rgba(4, 19, 14, 0.42);
-  background: rgba(31, 201, 158, 0.16);
+  background: rgba(17, 24, 22, 0.08);
   box-shadow: none;
 }
 
@@ -357,13 +349,18 @@ textarea {
   background: transparent;
   font-size: 14px;
   font-weight: 550;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .hero-open:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.04);
-  transform: none;
+  background: var(--surface-hover);
+  transform: translateY(-1px);
 }
 
 .hero-open:disabled {
@@ -422,7 +419,7 @@ textarea {
   box-shadow: var(--shadow-pop);
   font-size: 13px;
   transform: translateX(-50%);
-  animation: toast-in 220ms var(--ease);
+  animation: toast-in 240ms var(--ease);
 }
 
 .toast-icon {
@@ -447,7 +444,7 @@ textarea {
 }
 
 .toast-action:hover:not(:disabled) {
-  background: rgba(31, 201, 158, 0.2);
+  background: rgba(17, 24, 22, 0.12);
   border-color: var(--accent-border);
   color: var(--accent);
   transform: none;
@@ -468,7 +465,7 @@ textarea {
 
 .toast-close:hover:not(:disabled) {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 20, 0.06);
   transform: none;
 }
 
@@ -488,6 +485,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding: 18px 28px 22px;
+  animation: content-rise 260ms var(--ease) both;
 }
 
 .view-tabs {
@@ -498,7 +496,11 @@ textarea {
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-raised);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .view-tabs button {
@@ -507,6 +509,11 @@ textarea {
   padding: 0 12px;
   color: var(--text-muted);
   background: transparent;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .view-tabs button:hover:not(:disabled),
@@ -514,6 +521,7 @@ textarea {
   border-color: var(--border);
   color: var(--text);
   background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
   transform: none;
 }
 
@@ -589,6 +597,7 @@ h2 {
   min-height: 0;
   align-self: stretch;
   padding: 0 28px 26px;
+  animation: content-rise 300ms var(--ease) both;
 }
 
 .rules-error {
@@ -627,6 +636,9 @@ h2 {
     var(--shadow-md),
     inset 0 1px 0 var(--edge-light);
   overflow: auto;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .rules-menu-heading {
@@ -645,6 +657,11 @@ h2 {
   color: var(--text-muted);
   background: transparent;
   font-size: 13px;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .rules-menu-item:hover:not(:disabled),
@@ -666,6 +683,10 @@ h2 {
   box-shadow:
     var(--shadow-md),
     inset 0 1px 0 var(--edge-light);
+  animation: pane-enter 260ms var(--ease) both;
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .rules-content-pane {
@@ -688,7 +709,7 @@ h2 {
 }
 
 .pane-toggle:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-raised);
   transform: none;
 }
 
@@ -717,6 +738,13 @@ h2 {
   min-height: 52px;
   padding: 9px 0;
   border-bottom: 1px solid var(--border);
+  transition:
+    background var(--dur) var(--ease),
+    padding var(--dur) var(--ease);
+}
+
+.field-rule-row:hover {
+  background: var(--surface-raised);
 }
 
 .field-rule-row:last-child {
@@ -752,6 +780,11 @@ h2 {
   color: var(--text-muted);
   background: transparent;
   border: 1px solid var(--border);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .alias-add-button:hover:not(:disabled) {
@@ -788,7 +821,11 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 8px;
-  background: rgba(255, 255, 255, 0.014);
+  background: var(--surface-raised);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .alias-rule-group-title {
@@ -822,6 +859,15 @@ h2 {
   color: var(--text);
   background: var(--surface-raised);
   font-size: 13px;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.alias-chip:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 
 .rule-pill {
@@ -832,7 +878,18 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 8px 6px 8px 12px;
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--surface-raised);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.rule-pill:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .rule-pill-body {
@@ -913,6 +970,10 @@ select {
   background: var(--surface-raised);
   font: inherit;
   font-size: 13px;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 input::placeholder {
@@ -939,7 +1000,8 @@ select:focus {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.58);
+  background: rgba(15, 23, 20, 0.38);
+  animation: backdrop-in 180ms var(--ease) both;
 }
 
 .modal {
@@ -948,6 +1010,7 @@ select:focus {
   border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: var(--shadow-pop);
+  animation: modal-in 240ms var(--ease) both;
 }
 
 .modal-header {
@@ -1049,6 +1112,10 @@ select:focus {
   border-radius: var(--r-sm);
   color: var(--text-muted);
   background: transparent;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
 }
 
 .icon-button:hover:not(:disabled) {
@@ -1064,6 +1131,57 @@ select:focus {
 
 .spin {
   animation: spin 850ms linear infinite;
+}
+
+@keyframes app-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes content-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pane-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes spin {
