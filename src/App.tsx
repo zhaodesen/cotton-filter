@@ -335,14 +335,6 @@ export default function App() {
           <CheckCircle2 size={18} className="toast-icon" />
           <span className="toast-text">{notice}</span>
           <button
-            className="toast-action"
-            type="button"
-            onClick={openResultDir}
-            disabled={!outputDir}
-          >
-            打开目录
-          </button>
-          <button
             className="toast-close"
             type="button"
             aria-label="关闭"

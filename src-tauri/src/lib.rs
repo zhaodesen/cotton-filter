@@ -10,6 +10,17 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
+            // Windows 上 titleBarStyle: "Overlay" 不生效，系统会保留原生标题栏，
+            // 与前端自绘标题栏叠加成两个标题栏。这里关闭原生装饰，只保留自绘标题栏。
+            // macOS 仍走 Overlay（保留原生红绿灯按钮），不在此处理。
+            #[cfg(windows)]
+            {
+                use tauri::Manager;
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+
             #[cfg(desktop)]
             {
                 use tauri::{
@@ -52,8 +63,29 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app_handle, _event| {
+            // 应用退出时回收 Python sidecar，避免它残留并锁住
+            // cotton-filter-backend.exe，导致下次安装/更新报“无法写入文件”。
+            #[cfg(windows)]
+            if let tauri::RunEvent::Exit = _event {
+                kill_backend_process();
+            }
+        });
+}
+
+#[cfg(windows)]
+fn kill_backend_process() {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    // CREATE_NO_WINDOW: 不要为 taskkill 再弹一个黑窗。
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = Command::new("taskkill")
+        .args(["/F", "/T", "/IM", "cotton-filter-backend.exe"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
 }
 
 #[cfg(desktop)]
