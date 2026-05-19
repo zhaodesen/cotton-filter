@@ -1,6 +1,6 @@
 {
   "name": "cotton-filter",
-  "version": "0.1.0",
+  "version": "1.2.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "tauri build",
     "build:backend": "node scripts/build-backend.mjs",
     "build:frontend": "npm run build:backend && tsc -b && vite build",
+    "bump-version": "node scripts/bump-version.mjs",
     "dev:frontend": "npm run build:backend && vite --host 127.0.0.1",
     "manifest:updater": "node scripts/write-updater-manifest.mjs",
     "preview": "vite preview --host 127.0.0.1",
