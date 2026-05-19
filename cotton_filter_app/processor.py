@@ -7,9 +7,10 @@ from typing import Callable
 
 import pandas as pd
 
+from .constants import HEADER_SCAN_ROWS
 from .header import build_column_map, find_header_row
 from .models import ColumnMap, ProcessedRow, Record, SheetProcessResult
-from .rules import ColumnRule, DataRule, RuleSet, load_ruleset, matches_range
+from .rules import DataRule, RuleSet, load_ruleset, matches_range
 from .scoring import extract_color_percent, parse_float, score_record
 from .text_utils import normalize_text
 
@@ -178,65 +179,72 @@ def issue_row(
     return row_data
 
 
-def find_similar_column_rule(
-    column_name: str,
+def locate_best_header_row(raw_frame: pd.DataFrame, rule_set: RuleSet) -> int:
+    """精确匹配失败时，仅按别名完全命中挑选最像表头的行（不做任何猜测）。
+
+    用于把缺失的标准字段写进识别异常表：即使必需字段没凑齐，也尽量找到
+    命中标准字段最多的那一行作为表头基准，便于列出还缺哪些标准字段。
+    """
+
+    scan_limit = min(HEADER_SCAN_ROWS, len(raw_frame))
+    best_row = -1
+    best_hits = 0
+
+    for row_index in range(scan_limit):
+        cells = raw_frame.iloc[row_index].tolist()
+        hits = sum(1 for cell in cells if rule_set.column_candidates(cell))
+        if hits > best_hits:
+            best_hits = hits
+            best_row = row_index
+
+    # 只要有一列精确命中标准字段就认定为表头：数据行极少正好等于字段名，
+    # 而漏认表头会把实际存在的列也误报成“列名未覆盖”。
+    return best_row if best_hits >= 1 else -1
+
+
+def missing_standard_fields(
+    column_map: ColumnMap,
+    color_columns: ColorColumns,
     rule_set: RuleSet,
-) -> ColumnRule | None:
-    """查找疑似已有列名规则但未精确命中的表头。"""
+) -> list[str]:
+    """返回列名规则里定义、但当前表头未通过别名完全命中的标准字段。
 
-    column_key = normalize_text(column_name)
-    if not column_key:
-        return None
+    判定某个标准字段是否“已存在”：
+    - 普通字段：已出现在 column_map 中（即某列名完全命中了它的别名）。
+    - 颜色级：除 column_map 外，还可能以“颜色级比例(%)”下的多列组合表头
+      形式存在（此时 color_columns 非空），这种情况同样视为已存在。
+    """
 
-    candidates = [
-        rule
-        for rule in rule_set.enabled_column_rules()
-        if rule.alias_key
-        and rule.alias_key != column_key
-        and column_key.startswith(rule.alias_key)
-    ]
-    if not candidates:
-        return None
-    return sorted(
-        candidates,
-        key=lambda rule: (len(rule.alias_key), -rule.sort_order, -(rule.id or 0)),
-        reverse=True,
-    )[0]
+    has_color_columns = bool(color_columns)
+    missing: list[str] = []
+    for field_name in rule_set.standard_field_names():
+        if field_name in column_map:
+            continue
+        if field_name == "颜色级" and has_color_columns:
+            continue
+        missing.append(field_name)
+    return missing
 
 
-def append_unmapped_column_issues(
+def append_missing_standard_field_issues(
     issue_rows: list[Record],
     headers: list[str],
     column_map: ColumnMap,
     color_columns: ColorColumns,
     rule_set: RuleSet,
 ) -> None:
-    """提示疑似列名规则缺失的原始列。"""
+    """把 Excel 表头里缺失的标准字段写进识别异常表（匹配不上不猜，直接列出）。"""
 
-    mapped_columns = set(column_map.values())
-    color_column_indexes = {column_index for column_index, _ in color_columns}
-    for column_index, original_column in enumerate(headers):
-        if (
-            not original_column
-            or column_index in mapped_columns
-            or column_index in color_column_indexes
-        ):
-            continue
-
-        similar_rule = find_similar_column_rule(original_column, rule_set)
-        if similar_rule is None:
-            continue
-
+    for field_name in missing_standard_fields(column_map, color_columns, rule_set):
         issue_rows.append(
             issue_row(
                 issue_type="列名未覆盖",
                 message=(
-                    f"该原始列名疑似 {similar_rule.field_name}，"
-                    "但未命中列名规则，请在列名规则中新增对应别名"
+                    f"缺少标准字段 {field_name}，"
+                    "请在列名规则中为该字段新增对应的 Excel 列名别名"
                 ),
                 headers=headers,
-                field_name=similar_rule.field_name,
-                original_column=original_column,
+                field_name=field_name,
             )
         )
 
@@ -498,16 +506,46 @@ def process_sheet_result(
     log_prefix = f"[{sheet_name}] " if sheet_name else ""
     header_row = find_header_row(raw_frame, rule_set=rule_set)
     if header_row < 0:
-        issue = issue_row(
-            issue_type="表头未识别",
-            message="前置行中未识别到满足必需字段的表头",
-            headers=[],
-        )
         if log:
             log(f"{log_prefix}未识别到表头，跳过")
+
+        issue_rows: list[Record] = []
+        located_row = locate_best_header_row(raw_frame, rule_set)
+        if located_row >= 0:
+            located_cells = raw_frame.iloc[located_row].tolist()
+            located_map = build_column_map(located_cells, rule_set=rule_set)
+            located_colors = detect_color_columns(
+                raw_frame, located_row, located_map, rule_set
+            )
+            located_headers = build_original_headers(
+                raw_frame, located_row, located_colors
+            )
+        else:
+            # 一个标准字段都没匹配上：没有可用表头，仍把规则里的标准字段全列出来。
+            located_map = {}
+            located_colors = []
+            located_headers = []
+
+        append_missing_standard_field_issues(
+            issue_rows,
+            located_headers,
+            located_map,
+            located_colors,
+            rule_set,
+        )
+
+        if not issue_rows:
+            issue_rows.append(
+                issue_row(
+                    issue_type="表头未识别",
+                    message="前置行中未识别到满足必需字段的表头",
+                    headers=[],
+                )
+            )
+
         return SheetProcessResult(
             normal_frame=pd.DataFrame(),
-            issue_frame=pd.DataFrame([issue], columns=ISSUE_COLUMNS),
+            issue_frame=pd.DataFrame(issue_rows, columns=ISSUE_COLUMNS),
         )
 
     if log:
@@ -518,7 +556,7 @@ def process_sheet_result(
     color_columns = detect_color_columns(raw_frame, header_row, column_map, rule_set)
     headers = build_original_headers(raw_frame, header_row, color_columns)
     issue_rows: list[Record] = []
-    append_unmapped_column_issues(
+    append_missing_standard_field_issues(
         issue_rows,
         headers,
         column_map,
@@ -529,16 +567,6 @@ def process_sheet_result(
     missing_columns = [
         column_name for column_name in rule_set.required_fields if column_name not in column_map
     ]
-    for field_name in missing_columns:
-        issue_rows.append(
-            issue_row(
-                issue_type="列名未覆盖",
-                message=f"缺少必需字段 {field_name}，请在列名规则中新增对应别名",
-                headers=headers,
-                field_name=field_name,
-            )
-        )
-
     if missing_columns:
         if log:
             log(f"{log_prefix}缺少必需字段: {', '.join(missing_columns)}，跳过")

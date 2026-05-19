@@ -102,6 +102,22 @@ class RuleSet:
     def enabled_column_rules(self) -> tuple[ColumnRule, ...]:
         return tuple(rule for rule in self.column_rules if rule.enabled)
 
+    def standard_field_names(self) -> tuple[str, ...]:
+        """返回列名规则中出现过的标准字段，按 sort_order 去重排序。"""
+
+        ordered = sorted(
+            self.enabled_column_rules(),
+            key=lambda rule: (rule.sort_order, rule.id or 0),
+        )
+        seen: set[str] = set()
+        field_names: list[str] = []
+        for rule in ordered:
+            if rule.field_name in seen:
+                continue
+            seen.add(rule.field_name)
+            field_names.append(rule.field_name)
+        return tuple(field_names)
+
     def enabled_data_rules(self) -> tuple[DataRule, ...]:
         return tuple(rule for rule in self.data_rules if rule.enabled)
 

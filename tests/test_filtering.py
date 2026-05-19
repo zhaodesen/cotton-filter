@@ -474,13 +474,19 @@ class FilteringRulesTest(unittest.TestCase):
             issue_frame = workbook["识别异常"]
             self.assertIn("数据规则未覆盖", issue_frame["异常类型"].tolist())
             self.assertIn("未知色", issue_frame["原值"].fillna("").tolist())
-            self.assertNotIn("列名未覆盖", issue_frame["异常类型"].tolist())
+            # 列名规则里的标准字段没在 Excel 出现就要列出（强力/整齐度/毛重）。
+            self.assertIn("列名未覆盖", issue_frame["异常类型"].tolist())
+            missing_fields = issue_frame.loc[
+                issue_frame["异常类型"] == "列名未覆盖", "标准字段"
+            ].tolist()
+            self.assertEqual(set(missing_fields), {"强力", "整齐度", "毛重"})
+            # 匹配不上不猜原列名，未配置列不会被当成某个标准字段。
             self.assertNotIn("未配置列", issue_frame["原列名"].fillna("").tolist())
 
-    def test_unmapped_column_that_looks_like_known_alias_is_reported(self) -> None:
+    def test_missing_standard_field_is_listed_without_guessing(self) -> None:
         raw_frame = pd.DataFrame(
             [
-                ["批号", "基差", "长度", "马值", "颜色级1", "未配置列"],
+                ["批号", "基差", "长度", "马值", "11", "未配置列"],
                 ["A011", 350, 29.5, 4.1, "白棉3级", "原始备注"],
             ]
         )
@@ -489,9 +495,13 @@ class FilteringRulesTest(unittest.TestCase):
 
         issue_frame = result.issue_frame
         self.assertIn("列名未覆盖", issue_frame["异常类型"].tolist())
-        self.assertTrue(
-            any("颜色级1" in column for column in issue_frame["原列名"].fillna(""))
-        )
+        missing_fields = issue_frame.loc[
+            issue_frame["异常类型"] == "列名未覆盖", "标准字段"
+        ].tolist()
+        # “11” 不命中颜色级别名，颜色级要作为缺失标准字段列出来。
+        self.assertIn("颜色级", missing_fields)
+        # 不猜测：缺失项不会把 Excel 原列名（11/未配置列）写进原列名。
+        self.assertNotIn("11", issue_frame["原列名"].fillna("").tolist())
         self.assertNotIn("未配置列", issue_frame["原列名"].fillna("").tolist())
 
     def test_unique_output_path_starts_at_one_and_skips_taken(self) -> None:
@@ -540,7 +550,12 @@ class FilteringRulesTest(unittest.TestCase):
             self.assertTrue(output.exists())
             workbook = pd.read_excel(output, sheet_name=None)
             self.assertEqual(len(workbook["筛选结果"]), 0)
-            self.assertEqual(len(workbook["识别异常"]), 0)
+            # 没有命中行，但缺失的标准字段仍会作为列名未覆盖列出。
+            issue_frame = workbook["识别异常"]
+            self.assertEqual(set(issue_frame["异常类型"]), {"列名未覆盖"})
+            self.assertEqual(
+                set(issue_frame["标准字段"]), {"颜色级", "强力", "整齐度", "毛重"}
+            )
 
     def test_locked_output_file_falls_back_to_next_name(self) -> None:
         from cotton_filter_app import file_utils
