@@ -32,7 +32,15 @@ pub fn run() {
                 let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
                 let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
 
+                // 不显式设置 icon 时，Windows 托盘会是空白；这里用应用内嵌
+                // 的默认图标（tauri.conf.json bundle 的 icon.ico）。
+                let tray_icon = app
+                    .default_window_icon()
+                    .cloned()
+                    .ok_or("缺少默认窗口图标，无法设置托盘图标")?;
+
                 TrayIconBuilder::with_id("main-tray")
+                    .icon(tray_icon)
                     .tooltip("cotton-filter")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
