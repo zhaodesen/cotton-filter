@@ -244,6 +244,14 @@ def create_app() -> FastAPI:
             raise rule_error(error) from error
         return {"status": "ok"}
 
+    @app.delete("/api/rules/column/field/{field_name}")
+    def delete_column_rules_by_field(field_name: str) -> dict[str, object]:
+        try:
+            deleted = rule_repository.delete_column_rules_by_field(field_name)
+        except (KeyError, ValueError) as error:
+            raise rule_error(error) from error
+        return {"status": "ok", "deleted": deleted}
+
     @app.post("/api/rules/data", response_model=DataRuleResponse)
     def create_data_rule(request: DataRulePayload) -> DataRuleResponse:
         try:

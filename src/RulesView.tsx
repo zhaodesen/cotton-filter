@@ -4,6 +4,7 @@ import {
   Plus,
   SlidersHorizontal,
   Tags,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import {
   createColumnRule,
   createDataRule,
   deleteColumnRule,
+  deleteColumnRulesByField,
   deleteDataRule,
   exportRules,
   importRules,
@@ -189,11 +191,19 @@ export default function RulesView({
   const [isSaving, setIsSaving] = useState(false);
   const [errorText, setErrorText] = useState("");
 
+  // 列名规则面板只展示实际存在列名规则的标准字段：删除某字段的全部别名后，
+  // 该字段（含默认字段）会从列表消失，可通过“新增标准字段”重新加回。
   const columnFields = useMemo(() => {
-    const extra = columnRules.map((rule) => rule.field_name);
-    return Array.from(
-      new Set([...DEFAULT_STANDARD_FIELDS, ...extra]),
-    ).filter((field) => !EXCLUDED_COLUMN_FIELDS.has(field));
+    const present = new Set(columnRules.map((rule) => rule.field_name));
+    const ordered = [
+      ...DEFAULT_STANDARD_FIELDS.filter((field) => present.has(field)),
+      ...columnRules
+        .map((rule) => rule.field_name)
+        .filter((field) => !DEFAULT_STANDARD_FIELDS.includes(field)),
+    ];
+    return Array.from(new Set(ordered)).filter(
+      (field) => !EXCLUDED_COLUMN_FIELDS.has(field),
+    );
   }, [columnRules]);
 
   const dataFields = useMemo(() => {
@@ -441,6 +451,32 @@ export default function RulesView({
     }
   }
 
+  async function removeStandardField(fieldName: string) {
+    if (!baseUrl || isSaving) {
+      return;
+    }
+    const aliasCount = (columnRulesByField.get(fieldName) || []).length;
+    const shouldDelete = await confirm(
+      `删除标准字段「${fieldName}」会同时删除它的 ${aliasCount} 个列名别名，是否继续？`,
+      { title: "删除标准字段", kind: "warning" },
+    );
+    if (!shouldDelete) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorText("");
+    try {
+      await deleteColumnRulesByField(baseUrl, fieldName);
+      await reloadRules();
+      onLog(`标准字段已删除: ${fieldName}（含 ${aliasCount} 个别名）`);
+    } catch (error) {
+      setErrorText(formatError(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function removeData(rule: DataRule) {
     if (!baseUrl) {
       return;
@@ -626,15 +662,26 @@ export default function RulesView({
                         ))
                       )}
                     </div>
-                    <button
-                      className="alias-add-button"
-                      type="button"
-                      title={`为 ${fieldName} 新增别名`}
-                      onClick={() => openAliasDialog(fieldName)}
-                      disabled={!backendReady || isSaving}
-                    >
-                      <Plus size={15} />
-                    </button>
+                    <div className="field-rule-actions">
+                      <button
+                        className="alias-add-button"
+                        type="button"
+                        title={`为 ${fieldName} 新增别名`}
+                        onClick={() => openAliasDialog(fieldName)}
+                        disabled={!backendReady || isSaving}
+                      >
+                        <Plus size={15} />
+                      </button>
+                      <button
+                        className="field-delete-button"
+                        type="button"
+                        title={`删除标准字段 ${fieldName}（含全部别名）`}
+                        onClick={() => removeStandardField(fieldName)}
+                        disabled={!backendReady || isSaving}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                 );
               })}

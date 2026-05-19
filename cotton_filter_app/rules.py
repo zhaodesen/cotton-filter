@@ -595,6 +595,23 @@ class RuleRepository:
             if cursor.rowcount == 0:
                 raise KeyError(rule_id)
 
+    def delete_column_rules_by_field(self, field_name: str) -> int:
+        """删除某个标准字段下的全部列名别名规则，返回删除条数。"""
+
+        normalized_field = str(field_name or "").strip()
+        if not normalized_field:
+            raise ValueError("标准字段不能为空")
+        self.initialize()
+        with closing(self.connect()) as connection:
+            cursor = connection.execute(
+                f"DELETE FROM {COLUMN_RULE_TABLE} WHERE field_name = ?",
+                (normalized_field,),
+            )
+            connection.commit()
+            if cursor.rowcount == 0:
+                raise KeyError(normalized_field)
+            return int(cursor.rowcount)
+
     def get_column_rule(self, rule_id: int) -> ColumnRule:
         with closing(self.connect()) as connection:
             row = connection.execute(

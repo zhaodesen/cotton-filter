@@ -229,6 +229,16 @@ export function deleteColumnRule(
   return deleteJson(baseUrl, `/api/rules/column/${ruleId}`);
 }
 
+export function deleteColumnRulesByField(
+  baseUrl: string,
+  fieldName: string,
+): Promise<void> {
+  return deleteJson(
+    baseUrl,
+    `/api/rules/column/field/${encodeURIComponent(fieldName)}`,
+  );
+}
+
 export function createDataRule(
   baseUrl: string,
   payload: DataRulePayload,
