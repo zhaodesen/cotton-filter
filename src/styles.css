@@ -271,7 +271,7 @@ textarea {
   display: grid;
   place-items: center;
   min-height: 0;
-  padding: 0 28px 26px;
+  padding: 0 28px 34px;
   animation: content-rise 300ms var(--ease) both;
 }
 
@@ -280,7 +280,85 @@ textarea {
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  width: min(300px, 100%);
+  width: min(360px, 100%);
+  transform: translateY(-8px);
+}
+
+.cotton-sketch {
+  width: min(520px, 48vw);
+  min-width: 320px;
+  height: auto;
+  margin-bottom: 2px;
+  color: #111816;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cotton-shadow-line,
+.cotton-stem,
+.cotton-leaf,
+.cotton-leaf-vein,
+.cotton-boll path {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  animation-name: cotton-line-draw-loop;
+  animation-timing-function: var(--ease);
+  animation-iteration-count: infinite;
+}
+
+.cotton-shadow-line {
+  --cotton-opacity: 0.11;
+  stroke-width: 2.2;
+  animation-delay: 2.5s;
+  animation-duration: 5.6s;
+}
+
+.cotton-stem {
+  --cotton-opacity: 0.52;
+  stroke-width: 3.1;
+  animation-delay: 180ms;
+  animation-duration: 5.6s;
+}
+
+.cotton-leaf {
+  --cotton-opacity: 0.38;
+  stroke-width: 2.2;
+  animation-delay: 760ms;
+  animation-duration: 5.6s;
+}
+
+.cotton-leaf-vein,
+.cotton-soft-line {
+  --cotton-opacity: 0.22;
+  stroke-width: 1.6;
+  animation-delay: 1.8s;
+  animation-duration: 5.6s;
+}
+
+.cotton-boll > path:first-child {
+  --cotton-opacity: 0.72;
+  stroke-width: 3;
+  animation-delay: 1.05s;
+  animation-duration: 5.6s;
+}
+
+.cotton-boll-small > path:first-child {
+  --cotton-opacity: 0.56;
+  stroke-width: 2.3;
+  animation-delay: 1.28s;
+  animation-duration: 5.6s;
+}
+
+.cotton-hatch {
+  --cotton-opacity: 0.16;
+  stroke-width: 1.1;
+  animation-delay: 2.2s;
+  animation-duration: 5.6s;
 }
 
 .hero-add {
@@ -1185,6 +1263,25 @@ select:focus {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes cotton-line-draw-loop {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+  12% {
+    opacity: var(--cotton-opacity);
+  }
+  42%,
+  76% {
+    opacity: var(--cotton-opacity);
+    stroke-dashoffset: 0;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 1;
   }
 }
 
