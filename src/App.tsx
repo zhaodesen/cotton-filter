@@ -5,7 +5,9 @@ import {
   FileSpreadsheet,
   FolderOpen,
   Loader2,
+  Minus,
   RefreshCw,
+  Square,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +16,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { expandTargets, filterExcelFilesStream } from "./api";
 import { BackendService, startBackend } from "./backend";
@@ -37,11 +40,16 @@ export default function App() {
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [backendReady, setBackendReady] = useState(false);
+  const [useWindowsCustomFrame, setUseWindowsCustomFrame] = useState(false);
   const backendRef = useRef<BackendService | null>(null);
 
   function appendLog(message: string) {
     setLogs((current) => [...current, message]);
   }
+
+  useEffect(() => {
+    setUseWindowsCustomFrame(navigator.userAgent.toLowerCase().includes("windows"));
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -168,10 +176,63 @@ export default function App() {
     }
   }
 
+  async function minimizeWindow() {
+    await getCurrentWindow().minimize();
+  }
+
+  async function toggleMaximizeWindow() {
+    await getCurrentWindow().toggleMaximize();
+  }
+
+  async function closeWindow() {
+    await getCurrentWindow().close();
+  }
+
   return (
     <main className={activeView === "rules" ? "app-shell rules-mode" : "app-shell"}>
-      <section className="topbar">
-        <nav className="view-tabs" aria-label="菜单">
+      <div
+        className={
+          useWindowsCustomFrame
+            ? "window-drag-bar window-drag-bar-with-controls"
+            : "window-drag-bar"
+        }
+      >
+        <div className="window-drag-region" data-tauri-drag-region />
+        {useWindowsCustomFrame ? (
+          <div className="window-controls">
+            <button
+              className="window-control-btn"
+              type="button"
+              title="最小化"
+              aria-label="最小化"
+              onClick={() => void minimizeWindow()}
+            >
+              <Minus size={13} />
+            </button>
+            <button
+              className="window-control-btn"
+              type="button"
+              title="最大化"
+              aria-label="最大化"
+              onClick={() => void toggleMaximizeWindow()}
+            >
+              <Square size={12} />
+            </button>
+            <button
+              className="window-control-btn window-control-btn-close"
+              type="button"
+              title="关闭"
+              aria-label="关闭"
+              onClick={() => void closeWindow()}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <section className="topbar" data-tauri-drag-region>
+        <nav className="view-tabs" aria-label="菜单" data-tauri-no-drag>
           <button
             className={activeView === "filter" ? "active" : ""}
             type="button"
@@ -189,7 +250,12 @@ export default function App() {
             规则维护
           </button>
         </nav>
-        <button className="ghost-button" type="button" onClick={checkForUpdates}>
+        <button
+          className="ghost-button"
+          type="button"
+          onClick={checkForUpdates}
+          data-tauri-no-drag
+        >
           <RefreshCw size={17} />
           检查更新
         </button>

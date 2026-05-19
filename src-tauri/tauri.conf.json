@@ -12,12 +12,15 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "cotton-filter",
         "width": 1120,
         "height": 760,
         "minWidth": 900,
         "minHeight": 680,
         "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "fullscreen": false
       }
     ],

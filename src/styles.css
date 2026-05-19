@@ -213,20 +213,80 @@ button:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 16px;
+  grid-template-rows: 48px auto minmax(0, 1fr);
+  gap: 0;
   height: 100vh;
-  padding: 26px 28px;
 }
 
 .app-shell.rules-mode {
   overflow: hidden;
 }
 
+*[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+*[data-tauri-no-drag],
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.window-drag-bar {
+  display: flex;
+  align-items: stretch;
+  min-height: 48px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.window-drag-region {
+  flex: 1;
+  min-width: 0;
+}
+
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.window-control-btn {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.window-control-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-raised);
+  transform: none;
+}
+
+.window-control-btn-close:hover:not(:disabled) {
+  color: #fff;
+  background: #dc2626;
+}
+
 .filter-hero {
   display: grid;
   place-items: center;
   min-height: 0;
+  padding: 0 28px 26px;
 }
 
 .filter-hero-inner {
@@ -427,7 +487,7 @@ button:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 2px 6px;
+  padding: 18px 28px 22px;
 }
 
 .view-tabs {
@@ -528,6 +588,7 @@ h2 {
   height: 100%;
   min-height: 0;
   align-self: stretch;
+  padding: 0 28px 26px;
 }
 
 .rules-error {
