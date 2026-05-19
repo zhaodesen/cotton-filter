@@ -161,7 +161,7 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 手动生成 updater manifest：
 
 ```bash
-GITHUB_REF_NAME=v1.2.3 \
+GITHUB_REF_NAME=v1.2.4 \
 GITHUB_REPOSITORY=zhaodesen/cotton-filter \
 npm run manifest:updater
 ```

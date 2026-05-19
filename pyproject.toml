@@ -1,6 +1,6 @@
 [project]
 name = "cotton-filter"
-version = "1.2.3"
+version = "1.2.4"
 description = "Excel cotton resource filtering desktop app"
 requires-python = ">=3.10,<3.11"
 dependencies = [
