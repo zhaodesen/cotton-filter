@@ -1,6 +1,6 @@
 [package]
 name = "cotton-filter"
-version = "1.2.4"
+version = "1.2.5"
 description = "Excel cotton resource filtering desktop app"
 authors = ["zhaodesen"]
 edition = "2021"

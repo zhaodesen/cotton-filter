@@ -75,7 +75,7 @@ wheels = [
 
 [[package]]
 name = "cotton-filter"
-version = "1.2.4"
+version = "1.2.5"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },

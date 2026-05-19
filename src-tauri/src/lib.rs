@@ -65,11 +65,12 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|_app_handle, _event| {
-            // 应用退出时回收 Python sidecar，避免它残留并锁住
-            // cotton-filter-backend.exe，导致下次安装/更新报“无法写入文件”。
-            #[cfg(windows)]
-            if let tauri::RunEvent::Exit = _event {
+        .run(|_app_handle, event| {
+            // 应用退出时回收 Python sidecar：托盘“退出”走 app.exit(0)，
+            // 前端 cleanup 来不及执行，必须在这里跨平台兜底，否则后端
+            // 残留进程会一直占用端口、并锁住 cotton-filter-backend.exe
+            // 导致下次安装/更新报“无法写入文件”。
+            if let tauri::RunEvent::Exit = event {
                 kill_backend_process();
             }
         });
@@ -85,6 +86,17 @@ fn kill_backend_process() {
     let _ = Command::new("taskkill")
         .args(["/F", "/T", "/IM", "cotton-filter-backend.exe"])
         .creation_flags(CREATE_NO_WINDOW)
+        .status();
+}
+
+#[cfg(not(windows))]
+fn kill_backend_process() {
+    use std::process::Command;
+
+    // 按命令行特征匹配 sidecar；主程序名为 cotton-filter（不含
+    // -backend），不会被误杀。
+    let _ = Command::new("pkill")
+        .args(["-f", "cotton-filter-backend"])
         .status();
 }
 
